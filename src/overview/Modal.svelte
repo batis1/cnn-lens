@@ -60,6 +60,10 @@
   }
 
   const imageUpload = () => {
+    if (!files || !files[0]) {
+      return;
+    }
+
     usingURL = false;
     let reader = new FileReader();
     reader.onload = (event) => {
@@ -137,6 +141,22 @@
   .field {
     display: flex;
     justify-content: space-between;
+  }
+
+  .file-label {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .file-input {
+    height: 100%;
+    left: 0;
+    opacity: 0;
+    outline: none;
+    position: absolute;
+    top: 0;
+    width: 100%;
+    cursor: pointer;
   }
 
 </style>

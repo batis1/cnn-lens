@@ -13,6 +13,7 @@
   export let output;
   export let isPaused;
   export let dataRange;
+  export let poolType = 'max';
 
   const dispatch = createEventDispatcher();
   const padding = 0;
@@ -42,7 +43,7 @@
   let counter;
 
   // lots of replication between mouseover and start-pool. TODO: fix this.
-  function startMaxPool(stride) {
+  function startPool(stride) {
     counter = 0;
     let outputMappings = generateOutputMappings(stride, output, kernelLength, padded_input_size, dilation);
     if (stride <= 0) return;
@@ -80,11 +81,11 @@
     });
   }
 
-  startMaxPool(stride);
+  startPool(stride);
   let testImage = gridData(image)
   let testOutput = gridData(output)
   $ : {
-    startMaxPool(stride);
+    startPool(stride);
     testImage = gridData(image)
     testOutput = gridData(output)
   }
@@ -106,7 +107,7 @@
 </div>
 <div class="column has-text-centered">
   <span>
-    max(
+    {poolType === 'avg' ? 'avg' : 'max'}(
     <Dataview data={testInputMatrixSlice} highlights={outputHighlights} isKernelMath={true} 
       constraint={getVisualizationSizeConstraint(kernelLength)} dataRange={dataRange}/>
     )

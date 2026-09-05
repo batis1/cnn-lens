@@ -1,10 +1,11 @@
 <script>
 	import PoolAnimator from './PoolAnimator.svelte';
-  import { singleMaxPooling } from '../utils/cnn.js';
   import { createEventDispatcher } from 'svelte';
 
   export let input;
+  export let output;
   export let kernelLength;
+  export let poolType = 'max';
   export let dataRange;
   export let isExited;
   
@@ -13,17 +14,7 @@
 	let stride = 2;
   const dilation = 1;
   var isPaused = false;
-  var outputFinal = singleMaxPooling(input);
-  // let dragging = false;
-  // let dragInfo = {x1: 0, x2: 0, y1: 0, y2: 0};
-  // let detailView = d3.select('#detailview').node();
-  $: if (stride > 0) {
-    try { 
-      outputFinal = singleMaxPooling(input);
-    } catch {
-      console.log("Cannot handle stride of " + stride);
-    }
-  }
+  $: outputFinal = output;
   
   function handleClickPause() {
     isPaused = !isPaused;
@@ -159,7 +150,7 @@
       <div class="control-pannel">
       
         <div class="title-text">
-          Max Pooling
+          {poolType === 'avg' ? 'Average Pooling' : 'Max Pooling'}
         </div>
 
         <div class="buttons">
@@ -185,7 +176,7 @@
         <PoolAnimator on:message={handlePauseFromInteraction} 
           kernelLength={kernelLength} image={input} output={outputFinal} 
           stride={stride} dilation={dilation} isPaused={isPaused}
-          dataRange={dataRange} />
+          dataRange={dataRange} poolType={poolType} />
       </div>
 
       <div class="annotation">

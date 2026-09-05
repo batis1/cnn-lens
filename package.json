@@ -2,13 +2,16 @@
   "name": "svelte-app",
   "version": "1.0.0",
   "type": "module",
+  "task3Note": "Task 3 at line 12: upgraded TensorFlow.js so the browser runtime can load the trained 7-layer, 12-layer, and 17-layer demonstration exports.",
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
     "svelte": "^4.2.20",
     "vite": "^5.4.19"
   },
   "dependencies": {
-    "@tensorflow/tfjs": "^1.4.0"
+    "@tensorflow/tfjs": "^4.22.0",
+    "d3": "^5.16.0",
+    "echarts": "^5.6.0"
   },
   "scripts": {
     "dev": "vite",

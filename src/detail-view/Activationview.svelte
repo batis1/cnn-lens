@@ -1,15 +1,16 @@
 <script>
-	import ActivationAnimator from './ActivationAnimator.svelte';
-  import { createEventDispatcher } from 'svelte';
+  import ActivationAnimator from "./ActivationAnimator.svelte";
+  import { createEventDispatcher } from "svelte";
 
   export let input;
   export let output;
   export let dataRange;
   export let isExited;
+  export let activationType = "relu";
 
   const dispatch = createEventDispatcher();
   let isPaused = false;
-  
+
   function handleClickPause() {
     isPaused = !isPaused;
   }
@@ -19,18 +20,80 @@
   }
 
   function handleClickX() {
-    dispatch('message', {
-      text: true
+    dispatch("message", {
+      text: true,
     });
   }
 
   function handleScroll() {
-    let svgHeight = Number(d3.select('#cnn-svg').style('height').replace('px', '')) + 150;
-    let scroll = new SmoothScroll('a[href*="#"]', {offset: -svgHeight});
+    let svgHeight =
+      Number(d3.select("#cnn-svg").style("height").replace("px", "")) + 150;
+    let scroll = new SmoothScroll('a[href*="#"]', { offset: -svgHeight });
     let anchor = document.querySelector(`#article-relu`);
     scroll.animateScroll(anchor);
   }
 </script>
+
+{#if !isExited}
+  <div class="container">
+    <div class="box">
+      <div class="control-pannel">
+        <div class="title-text">
+          {activationType === "sigmoid"
+            ? "Sigmoid Activation"
+            : "ReLU Activation"}
+        </div>
+
+        <div class="buttons">
+          <div
+            class="control-button"
+            on:click={handleScroll}
+            title="Jump to article section"
+          >
+            <i class="fas fa-info-circle"></i>
+          </div>
+
+          <div
+            class="play-button control-button"
+            on:click={handleClickPause}
+            title="Play animation"
+          >
+            {@html isPaused
+              ? '<i class="fas fa-play-circle play-icon"></i>'
+              : '<i class="fas fa-pause-circle"></i>'}
+          </div>
+
+          <div
+            class="delete-button control-button"
+            on:click={handleClickX}
+            title="Close"
+          >
+            <i class="fas control-icon fa-times-circle"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="container is-centered is-vcentered">
+        <ActivationAnimator
+          on:message={handlePauseFromInteraction}
+          image={input}
+          {output}
+          {isPaused}
+          {dataRange}
+          {activationType}
+        />
+      </div>
+
+      <div class="annotation">
+        <img src="assets/img/pointer.svg" alt="pointer icon" />
+        <div class="annotation-text">
+          <span style="font-weight:600">Hover over</span> the matrices to change
+          pixel.
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .control-pannel {
@@ -62,7 +125,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding-left : 10px;
+    padding-left: 10px;
     font-size: 12px;
   }
 
@@ -91,49 +154,3 @@
     color: #4a4a4a;
   }
 </style>
-
-{#if !isExited}
-  <div class="container">
-    <div class="box">
-
-      <div class="control-pannel">
-
-        <div class="title-text">
-          ReLU Activation
-        </div>
-
-        <div class="buttons">
-
-          <div class="control-button" on:click={handleScroll} title="Jump to article section">
-            <i class="fas fa-info-circle"></i>
-          </div>
-
-          <div class="play-button control-button" on:click={handleClickPause} title="Play animation">
-            {@html isPaused ?
-              '<i class="fas fa-play-circle play-icon"></i>' :
-              '<i class="fas fa-pause-circle"></i>'}
-          </div>
-
-          <div class="delete-button control-button" on:click={handleClickX} title="Close">
-              <i class="fas control-icon fa-times-circle"></i>
-          </div>
-        </div>
-
-      </div>
-
-      <div class="container is-centered is-vcentered">
-        <ActivationAnimator on:message={handlePauseFromInteraction} 
-          image={input} output={output} isPaused={isPaused}
-          dataRange={dataRange}/>
-      </div>
-
-      <div class="annotation">
-        <img src='assets/img/pointer.svg' alt='pointer icon'>
-        <div class="annotation-text">
-          <span style="font-weight:600">Hover over</span> the matrices to change pixel.
-        </div>
-      </div>
-
-    </div>
-  </div>
-{/if}

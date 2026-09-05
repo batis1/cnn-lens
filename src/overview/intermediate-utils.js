@@ -105,6 +105,23 @@ export const addOverlayGradient = (gradientID, stops, group) => {
     group = svg;
   }
 
+  // AI_TEST_UI_INTEGRATION:
+  // The original detail/flatten overlays fade inactive layers with white.
+  // In AI_Test_UI mode those same overlays should stay in the dark blue/cyan
+  // dashboard theme. Only true view overlays use the overlay-gradient prefix;
+  // legend gradients keep their original colors.
+  const isAiTestOverlay =
+    typeof document !== 'undefined' &&
+    document.body.classList.contains('ai-test-ui-mode') &&
+    String(gradientID).startsWith('overlay-gradient');
+  const themedStops = isAiTestOverlay
+    ? stops.map((stop, index) => ({
+      ...stop,
+      color: index === 0 ? '#0b347d' : '#092c70',
+      opacity: Math.min(Math.max(Number(stop.opacity) || 0.85, 0.78), 0.94),
+    }))
+    : stops;
+
   // Create a gradient
   let defs = group.append("defs")
     .attr('class', 'overlay-gradient');
@@ -116,7 +133,7 @@ export const addOverlayGradient = (gradientID, stops, group) => {
     .attr("y1", "100%")
     .attr("y2", "100%");
   
-  stops.forEach(s => {
+  themedStops.forEach(s => {
     gradient.append('stop')
       .attr('offset', s.offset)
       .attr('stop-color', s.color)
@@ -141,6 +158,9 @@ export const addOverlayGradient = (gradientID, stops, group) => {
  *   colorScale: d3 color scale
  *   gradientAppendingName: name of the appending gradient
  *   gradientGap: gap to make the color lighter
+ *   legendLayerIndex: layer index used for moving/hiding the legend
+ *   tickValues: optional explicit legend tick values
+ *   className: optional extra class for selecting a specific legend
  * }
  */
 export const drawIntermediateLayerLegend = (arg) => {
@@ -155,7 +175,11 @@ export const drawIntermediateLayerLegend = (arg) => {
     isInput = arg.isInput,
     colorScale = arg.colorScale,
     gradientAppendingName = arg.gradientAppendingName,
-    gradientGap = arg.gradientGap;
+    gradientGap = arg.gradientGap,
+    tickValues = arg.tickValues,
+    className = arg.className,
+    legendLayerIndex = arg.legendLayerIndex === undefined ?
+      curLayerIndex - 1 : arg.legendLayerIndex;
   
   if (colorScale === undefined) { colorScale = layerColorScales.conv; }
   if (gradientGap === undefined) { gradientGap = 0; }
@@ -203,10 +227,10 @@ export const drawIntermediateLayerLegend = (arg) => {
   let legendAxis = d3.axisBottom()
     .scale(legendScale)
     .tickFormat(d3.format(isInput ? 'd' : '.2f'))
-    .tickValues(isInput ? [0, range] : [minMax.min, 0, minMax.max]);
+    .tickValues(tickValues || (isInput ? [0, range] : [minMax.min, 0, minMax.max]));
   
   let intermediateLegend = group.append('g')
-    .attr('class', `intermediate-legend-${curLayerIndex - 1}`)
+    .attr('class', `intermediate-legend-${legendLayerIndex}${className ? ` ${className}` : ''}`)
     .attr('transform', `translate(${x}, ${y})`);
   
   let legendGroup = intermediateLegend.append('g')

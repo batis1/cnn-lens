@@ -252,6 +252,10 @@
   svg {
     margin: 10px 0 12px 0;
   }
+
+  :global(#softmax-svg text) {
+    fill: #ffffff;
+  }
 </style>
 
 <div class="container" bind:this={softmaxViewComponent}>

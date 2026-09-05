@@ -2,11 +2,11 @@
 
 import {
   svgStore, vSpaceAroundGapStore, hSpaceAroundGapStore, cnnStore,
-  nodeCoordinateStore, selectedScaleLevelStore, cnnLayerRangesStore,
-  detailedModeStore, cnnLayerMinMaxStore, hoverInfoStore
+  nodeCoordinateStore, selectedScaleLevelStore, layerDisplayOrderStore, cnnLayerRangesStore,
+  detailedModeStore, cnnLayerMinMaxStore, hoverInfoStore, manualLayerRevealStore
 } from '../stores.js';
 import {
-  getExtent, getLinkData
+  getExtent, getInputKnot, getLinkData, getOutputKnot
 } from './draw-utils.js';
 import { overviewConfig } from '../config.js';
 
@@ -31,6 +31,10 @@ const nodePulseDuration = 240;
 const nodePulseSettleDuration = 260;
 const winnerLabelDelayOffset = 180;
 const winnerLabelDuration = 380;
+const layerRevealDuration = 520; // Task 6.3
+const layerRevealStagger = 380; //Task 6.3
+const manualRevealPacketOffset = 80;
+const ENABLE_EDGE_PACKETS = false;
 const packetColors = {
   green: '#BDE4B2',
   pink: '#F472B6',
@@ -41,33 +45,174 @@ const packetColors = {
   lightPurple: '#E9D5FF'
 };
 
+const isStyleTestMode = () =>
+  Boolean(document.querySelector('.overview.style-test-mode'));
+
+const formatLayerLabel = (name) => {
+  if (!name) {
+    return '';
+  }
+
+  let normalized = String(name).toLowerCase();
+  if (normalized === 'output') {
+    return 'Output';
+  }
+  if (normalized.includes('flatten')) {
+    return 'Flatten';
+  }
+  if (normalized.includes('avg_pool')) {
+    return 'Avg Pool';
+  }
+  if (normalized.includes('max_pool') || normalized.includes('pool')) {
+    return 'Pool';
+  }
+  if (normalized.includes('sigmoid')) {
+    return 'Sigmoid';
+  }
+  if (normalized.includes('relu')) {
+    return 'ReLU';
+  }
+  if (normalized.includes('dense')) {
+    let suffix = normalized.match(/dense[_-]?(\d+)/)?.[1];
+    return suffix ? `Dense ${suffix}` : 'Dense';
+  }
+  if (normalized.includes('conv')) {
+    return 'Conv';
+  }
+
+  return String(name)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+const updateStyleTestLayerHierarchy = (activeLayerIndex = null) => {
+  if (!svg || !isStyleTestMode()) {
+    return;
+  }
+
+  let hasActiveLayer = Number.isFinite(activeLayerIndex);
+  svg.selectAll('g.layer-label, g.layer-detailed-label')
+    .classed('is-style-active', function () {
+      let labelIndex = Number(String(this.id || '').match(/-(\d+)$/)?.[1]);
+      return hasActiveLayer && labelIndex === activeLayerIndex;
+    })
+    .classed('is-style-muted', function () {
+      let labelIndex = Number(String(this.id || '').match(/-(\d+)$/)?.[1]);
+      return hasActiveLayer && Number.isFinite(labelIndex) && labelIndex !== activeLayerIndex;
+    });
+};
+
 // Shared variables
 let svg = undefined;
-svgStore.subscribe( value => {svg = value;} )
+svgStore.subscribe(value => { svg = value; })
 
 let vSpaceAroundGap = undefined;
-vSpaceAroundGapStore.subscribe( value => {vSpaceAroundGap = value;} )
+vSpaceAroundGapStore.subscribe(value => { vSpaceAroundGap = value; })
 
 let hSpaceAroundGap = undefined;
-hSpaceAroundGapStore.subscribe( value => {hSpaceAroundGap = value;} )
+hSpaceAroundGapStore.subscribe(value => { hSpaceAroundGap = value; })
 
 let cnn = undefined;
-cnnStore.subscribe( value => {cnn = value;} )
+cnnStore.subscribe(value => { cnn = value; })
 
 let nodeCoordinate = undefined;
-nodeCoordinateStore.subscribe( value => {nodeCoordinate = value;} )
+nodeCoordinateStore.subscribe(value => { nodeCoordinate = value; })
 
 let selectedScaleLevel = undefined;
-selectedScaleLevelStore.subscribe( value => {selectedScaleLevel = value;} )
+selectedScaleLevelStore.subscribe(value => { selectedScaleLevel = value; })
+
+let layerDisplayOrder = 'model';
+layerDisplayOrderStore.subscribe(value => { layerDisplayOrder = value; })
 
 let cnnLayerRanges = undefined;
-cnnLayerRangesStore.subscribe( value => {cnnLayerRanges = value;} )
+cnnLayerRangesStore.subscribe(value => { cnnLayerRanges = value; })
 
 let cnnLayerMinMax = undefined;
-cnnLayerMinMaxStore.subscribe( value => {cnnLayerMinMax = value;} )
+cnnLayerMinMaxStore.subscribe(value => { cnnLayerMinMax = value; })
 
 let detailedMode = undefined;
-detailedModeStore.subscribe( value => {detailedMode = value;} )
+detailedModeStore.subscribe(value => { detailedMode = value; })
+
+let manualRevealState = { //Task 6.3
+  displayOrder: [],
+  nextDisplayIndex: 1,
+  cnnGroup: undefined,
+  controlGroup: undefined,
+};
+
+export const applyCurrentEdgeVisibility = (overrideFilter = null) => {
+  if (!svg) {
+    return;
+  }
+
+  let edgeSelection = svg.select('g.edge-group').selectAll('path.edge');
+  if (edgeSelection.empty()) {
+    return;
+  }
+
+  edgeSelection.each(function (d) {
+    let isVisibleByReveal = d.displayTargetLayerIndex < manualRevealState.nextDisplayIndex;
+    let isVisible = overrideFilter ? overrideFilter(d, isVisibleByReveal) : isVisibleByReveal;
+
+    d3.select(this)
+      .interrupt('edge-reveal')
+      .style('visibility', isVisible ? 'visible' : 'hidden')
+      .style('opacity', isVisible ? edgeOpacity : 0)
+      .style('pointer-events', isVisible ? 'stroke' : 'none')
+      .style('stroke-dasharray', null)
+      .style('stroke-dashoffset', null);
+  });
+}
+
+export const setLayerHoverState = (layerIndex, isHovered) => {
+  if (!svg || layerIndex === undefined || layerIndex < 0) {
+    return;
+  }
+
+  let layerGroup = svg.select(`#cnn-layer-group-${layerIndex}`);
+  let outline = layerGroup.select('rect.layer-hover-outline');
+  let labels = svg.selectAll(`#layer-label-${layerIndex}, #layer-detailed-label-${layerIndex}`);
+
+  if (isHovered) {
+    outline
+      .classed('active', true)
+      .style('opacity', 1)
+      .style('stroke-dashoffset', 0)
+      .transition('layer-hover-dash')
+      .duration(900)
+      .ease(d3.easeLinear)
+      .style('stroke-dashoffset', -18)
+      .on('end', function repeat() {
+        d3.select(this)
+          .style('stroke-dashoffset', 0)
+          .transition('layer-hover-dash')
+          .duration(900)
+          .ease(d3.easeLinear)
+          .style('stroke-dashoffset', -18)
+          .on('end', repeat);
+      });
+
+    labels.select('rect.layer-label-highlight')
+      .style('opacity', 0.88);
+    labels.select('text')
+      .style('fill', '#475569');
+    return;
+  }
+
+  outline
+    .classed('active', false)
+    .interrupt('layer-hover-dash')
+    .transition('layer-hover-out')
+    .duration(180)
+    .style('opacity', 0);
+
+  labels.select('rect.layer-label-highlight')
+    .transition('layer-label-highlight-out')
+    .duration(160)
+    .style('opacity', 0);
+  labels.select('text')
+    .style('fill', null);
+}
 
 /**
  * Use bounded d3 data to draw one canvas
@@ -98,12 +243,12 @@ export const drawOutput = (d, i, g, range) => {
   if (imageLength === 1) {
     imageSingleArray[0] = d.output;
   } else {
-    for (let i = 0; i < imageSingleArray.length; i+=4) {
+    for (let i = 0; i < imageSingleArray.length; i += 4) {
       let pixeIndex = Math.floor(i / 4);
       let row = Math.floor(pixeIndex / imageLength);
       let column = pixeIndex % imageLength;
       let color = undefined;
-      if (d.type === 'input' || d.type === 'fc' ) {
+      if (d.type === 'input' || d.type === 'fc') {
         color = d3.rgb(colorScale(1 - d.output[row][column]))
       } else {
         color = d3.rgb(colorScale((d.output[row][column] + range / 2) / range));
@@ -128,7 +273,7 @@ export const drawOutput = (d, i, g, range) => {
   bufferContext.putImageData(imageSingle, 0, 0);
   largeCanvasContext.drawImage(bufferCanvas, 0, 0, imageLength, imageLength,
     0, 0, nodeLength * 3, nodeLength * 3);
-  
+
   let imageDataURL = largeCanvas.toDataURL();
   d3.select(image).attr('xlink:href', imageDataURL);
 
@@ -168,7 +313,7 @@ export const drawCustomImage = (image, inputLayer) => {
   let imageSingle = bufferContext.getImageData(0, 0, imageLength, imageLength);
   let imageSingleArray = imageSingle.data;
 
-  for (let i = 0; i < imageSingleArray.length; i+=4) {
+  for (let i = 0; i < imageSingleArray.length; i += 4) {
     let pixeIndex = Math.floor(i / 4);
     let row = Math.floor(pixeIndex / imageLength);
     let column = pixeIndex % imageLength;
@@ -195,7 +340,7 @@ export const drawCustomImage = (image, inputLayer) => {
   bufferContext.putImageData(imageSingle, 0, 0);
   largeCanvasContext.drawImage(bufferCanvas, 0, 0, imageLength, imageLength,
     0, 0, imageWidth * 3, imageWidth * 3);
-  
+
   let imageDataURL = largeCanvas.toDataURL();
   // d3.select(image).attr('xlink:href', imageDataURL);
   image.src = imageDataURL;
@@ -241,8 +386,11 @@ const getLegendGradient = (g, colorScale, gradientName, min, max) => {
  * @param {number} legendHeight Height of the legend element
  */
 const drawLegends = (legends, legendHeight) => {
+  let visibleLayerCount = cnn.length || numLayers;
+  let numOfComponent = Math.max(1, Math.ceil((visibleLayerCount - 2) / 5));
+
   // Add local legends
-  for (let i = 0; i < 2; i++){
+  for (let i = 0; i < numOfComponent; i++) {
     let start = 1 + i * 5;
     let range1 = cnnLayerRanges.local[start];
     let range2 = cnnLayerRanges.local[start + 2];
@@ -250,7 +398,7 @@ const drawLegends = (legends, legendHeight) => {
     let localLegendScale1 = d3.scaleLinear()
       .range([0, 2 * nodeLength + hSpaceAroundGap - 1.2])
       .domain([-range1 / 2, range1 / 2]);
-    
+
     let localLegendScale2 = d3.scaleLinear()
       .range([0, 3 * nodeLength + 2 * hSpaceAroundGap - 1.2])
       .domain([-range2 / 2, range2 / 2]);
@@ -259,7 +407,7 @@ const drawLegends = (legends, legendHeight) => {
       .scale(localLegendScale1)
       .tickFormat(d3.format('.2f'))
       .tickValues([-range1 / 2, 0, range1 / 2]);
-    
+
     let localLegendAxis2 = d3.axisBottom()
       .scale(localLegendScale2)
       .tickFormat(d3.format('.2f'))
@@ -297,7 +445,7 @@ const drawLegends = (legends, legendHeight) => {
   }
 
   // Add module legends
-  for (let i = 0; i < 2; i++){
+  for (let i = 0; i < numOfComponent; i++) {
     let start = 1 + i * 5;
     let range = cnnLayerRanges.module[start];
 
@@ -316,7 +464,7 @@ const drawLegends = (legends, legendHeight) => {
       .attr('id', `module-legend-${i}`)
       .classed('hidden', !detailedMode || selectedScaleLevel !== 'module')
       .attr('transform', `translate(${nodeCoordinate[start][0].x}, ${0})`);
-    
+
     moduleLegend.append('g')
       .attr('transform', `translate(0, ${legendHeight - 3})`)
       .call(moduleLegendAxis)
@@ -361,20 +509,20 @@ const drawLegends = (legends, legendHeight) => {
 
   // Add output legend
   let outputRectScale = d3.scaleLinear()
-        .domain(cnnLayerRanges.output)
-        .range([0, nodeLength - 1.2]);
+    .domain(cnnLayerRanges.output)
+    .range([0, nodeLength - 1.2]);
 
   let outputLegendAxis = d3.axisBottom()
     .scale(outputRectScale)
     .tickFormat(d3.format('.1f'))
     .tickValues([0, cnnLayerRanges.output[1]])
-  
+
   let outputLegend = legends.append('g')
     .attr('class', 'legend output-legend')
     .attr('id', 'output-legend')
     .classed('hidden', !detailedMode)
-    .attr('transform', `translate(${nodeCoordinate[11][0].x}, ${0})`);
-  
+    .attr('transform', `translate(${nodeCoordinate[visibleLayerCount - 1][0].x}, ${0})`);
+
   outputLegend.append('g')
     .attr('transform', `translate(0, ${legendHeight - 3})`)
     .call(outputLegendAxis);
@@ -383,7 +531,7 @@ const drawLegends = (legends, legendHeight) => {
     .attr('width', nodeLength)
     .attr('height', legendHeight)
     .style('fill', 'gray');
-  
+
   // Add input image legend
   let inputScale = d3.scaleLinear()
     .range([0, nodeLength - 1.2])
@@ -398,7 +546,7 @@ const drawLegends = (legends, legendHeight) => {
     .attr('class', 'legend input-legend')
     .classed('hidden', !detailedMode)
     .attr('transform', `translate(${nodeCoordinate[0][0].x}, ${0})`);
-  
+
   inputLegend.append('g')
     .attr('transform', `translate(0, ${legendHeight - 3})`)
     .call(inputLegendAxis);
@@ -407,42 +555,45 @@ const drawLegends = (legends, legendHeight) => {
     .attr('x', 0.3)
     .attr('width', nodeLength - 0.3)
     .attr('height', legendHeight)
-    .attr('transform', `rotate(180, ${nodeLength/2}, ${legendHeight/2})`)
+    .attr('transform', `rotate(180, ${nodeLength / 2}, ${legendHeight / 2})`)
     .style('stroke', 'rgb(20, 20, 20)')
     .style('stroke-width', 0.3)
     .style('fill', 'url(#inputGradient)');
 }
 
 /**
- * Match the packet colors from the slide animation across the network depth.
- * @param {number} targetLayerIndex
+ * Match packet colors to the current displayed layer order, not only the
+ * original model index order.
+ * @param {object|number} edgeOrDisplayLayerIndex
  */
-const getPacketColor = (targetLayerIndex) => {
-  if (targetLayerIndex === 1) {
-    return packetColors.green;
+const getPacketColor = (edgeOrDisplayLayerIndex) => {
+  let displayTargetLayerIndex = typeof edgeOrDisplayLayerIndex === 'object' ?
+    edgeOrDisplayLayerIndex.displayTargetLayerIndex : edgeOrDisplayLayerIndex;
+  let targetLayerType = typeof edgeOrDisplayLayerIndex === 'object' ?
+    edgeOrDisplayLayerIndex.targetLayerType : undefined;
+
+  if (targetLayerType === 'fc' || displayTargetLayerIndex >= cnn.length - 1) {
+    return packetColors.lightPurple;
   }
 
-  if (targetLayerIndex <= 3) {
-    return packetColors.pink;
-  }
+  let palette = [
+    packetColors.green,
+    packetColors.pink,
+    packetColors.violet,
+    packetColors.amber,
+    packetColors.cyan,
+    packetColors.coral
+  ];
 
-  if (targetLayerIndex <= 5) {
-    return packetColors.violet;
-  }
+  let featureLayerCount = Math.max(cnn.length - 2, 1);
+  let featureDisplayIndex = Math.max(displayTargetLayerIndex - 1, 0);
+  let bucketSize = Math.max(1, Math.ceil(featureLayerCount / palette.length));
+  let paletteIndex = Math.min(
+    palette.length - 1,
+    Math.floor(featureDisplayIndex / bucketSize),
+  );
 
-  if (targetLayerIndex <= 7) {
-    return packetColors.amber;
-  }
-
-  if (targetLayerIndex <= 9) {
-    return packetColors.cyan;
-  }
-
-  if (targetLayerIndex <= 10) {
-    return packetColors.coral;
-  }
-
-  return packetColors.lightPurple;
+  return palette[paletteIndex];
 }
 
 /**
@@ -464,53 +615,125 @@ const getWinningOutputIndex = (outputLayer) => {
   return maxIndex;
 }
 
+const getFeatureLayerDisplayOrder = () => {
+  // Task 3 at lines 479-506: compute the feature-layer display order from the
+  // current model so conv, relu, and pool layers can be rearranged in the UI.
+  let featureLayerIndices = cnn
+    .map((layer, index) => ({ index: index, type: layer[0].type }))
+    .filter((entry) => entry.index > 0 && entry.index < cnn.length - 1);
+
+  if (layerDisplayOrder === 'model') {
+    return featureLayerIndices.map((entry) => entry.index);
+  }
+
+  let typePriority = {
+    'conv-relu-pool': ['conv', 'relu', 'pool', 'fc'],
+    'conv-pool-relu': ['conv', 'pool', 'relu', 'fc'],
+    'relu-conv-pool': ['relu', 'conv', 'pool', 'fc'],
+  }[layerDisplayOrder];
+
+  if (!typePriority) {
+    return featureLayerIndices.map((entry) => entry.index);
+  }
+
+  let orderLookup = new Map(typePriority.map((type, i) => [type, i]));
+  return featureLayerIndices
+    .sort((a, b) => {
+      let aOrder = orderLookup.has(a.type) ? orderLookup.get(a.type) : 999;
+      let bOrder = orderLookup.has(b.type) ? orderLookup.get(b.type) : 999;
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder;
+      }
+      return a.index - b.index;
+    })
+    .map((entry) => entry.index);
+}
+
+const getDisplayOrder = () => {
+  let featureOrder = getFeatureLayerDisplayOrder();
+  return [0, ...featureOrder, cnn.length - 1];
+}
+
+const getDisplayLayerIndexLookup = () => {
+  let lookup = new Map();
+  getDisplayOrder().forEach((layerIndex, displayIndex) => {
+    lookup.set(layerIndex, displayIndex);
+  });
+  return lookup;
+}
+// Task 5 at lines 525-527
+const getDisplayGapWeight = (layer) => {
+  if (layer[0].type === 'conv') {
+    return gapRatio;
+  }
+  return layer[0].layerName === 'output' ? Math.max(1.4, gapRatio / 2) : 1;
+}
+// Task 4 at lines 525-575: build link data based on the display order instead of model order so that the animation and hover interactions are consistent with the current layer arrangement.
+const buildDisplayOrderLinkData = (nodeCoordinate, cnn, displayOrder) => {
+  let linkData = [];
+
+  for (let di = 1; di < displayOrder.length; di++) {
+    let sourceLayerIndex = displayOrder[di - 1];
+    let targetLayerIndex = displayOrder[di];
+    let sourceLayer = cnn[sourceLayerIndex];
+    let targetLayer = cnn[targetLayerIndex];
+    let targetType = targetLayer[0].type;
+
+    if (targetType === 'conv' || targetType === 'fc') {
+      for (let targetNodeIndex = 0; targetNodeIndex < targetLayer.length; targetNodeIndex++) {
+        let curTarget = getInputKnot(nodeCoordinate[targetLayerIndex][targetNodeIndex]);
+        for (let sourceNodeIndex = 0; sourceNodeIndex < sourceLayer.length; sourceNodeIndex++) {
+          let curSource = getOutputKnot(nodeCoordinate[sourceLayerIndex][sourceNodeIndex]);
+          linkData.push({
+            source: curSource,
+            target: curTarget,
+            weight: null,
+            sourceLayerIndex: sourceLayerIndex,
+            sourceNodeIndex: sourceNodeIndex,
+            targetLayerIndex: targetLayerIndex,
+            targetNodeIndex: targetNodeIndex,
+            displaySourceLayerIndex: di - 1,
+            displayTargetLayerIndex: di,
+            targetLayerType: targetType,
+          });
+        }
+      }
+      continue;
+    }
+
+    let pairCount = Math.min(sourceLayer.length, targetLayer.length);
+    for (let nodeIndex = 0; nodeIndex < pairCount; nodeIndex++) {
+      linkData.push({
+        source: getOutputKnot(nodeCoordinate[sourceLayerIndex][nodeIndex]),
+        target: getInputKnot(nodeCoordinate[targetLayerIndex][nodeIndex]),
+        weight: null,
+        sourceLayerIndex: sourceLayerIndex,
+        sourceNodeIndex: nodeIndex,
+        targetLayerIndex: targetLayerIndex,
+        targetNodeIndex: nodeIndex,
+        displaySourceLayerIndex: di - 1,
+        displayTargetLayerIndex: di,
+        targetLayerType: targetType,
+      });
+    }
+  }
+
+  return linkData;
+}
+
 const drawStageGroups = (cnnGroup, height) => {
+  if (layerDisplayOrder !== 'model') {
+    let existing = cnnGroup.select('g.stage-grouping');
+    if (!existing.empty()) {
+      existing.remove();
+    }
+    return;
+  }
+
   let existing = cnnGroup.select('g.stage-grouping');
   if (!existing.empty()) {
     existing.remove();
   }
-
-  let stageGroup = cnnGroup.insert('g', ':first-child')
-    .attr('class', 'stage-grouping')
-    .style('pointer-events', 'none');
-
-  let stages = [
-    {
-      start: 1,
-      end: 5,
-      fill: '#F8FAFC',
-      stroke: '#E2E8F0',
-    },
-    {
-      start: 6,
-      end: 10,
-      fill: '#F1F5F9',
-      stroke: '#CBD5E1',
-    }
-  ];
-
-  stages.forEach((stage) => {
-    let x = nodeCoordinate[stage.start][0].x - 28;
-    let endX = nodeCoordinate[stage.end][0].x + nodeLength + 28;
-    let y = svgPaddings.top - 22;
-    let boxHeight = height - svgPaddings.top - svgPaddings.bottom + 82;
-
-    let group = stageGroup.append('g')
-      .attr('class', 'stage-group');
-
-    group.append('rect')
-      .attr('x', x)
-      .attr('y', y)
-      .attr('width', endX - x)
-      .attr('height', boxHeight)
-      .attr('rx', 24)
-      .attr('ry', 24)
-      .style('fill', stage.fill)
-      .style('stroke', stage.stroke)
-      .style('stroke-width', 1.5)
-      .style('opacity', 0.65);
-
-  });
 }
 
 
@@ -519,18 +742,18 @@ const drawStageGroups = (cnnGroup, height) => {
  * This keeps the overview calmer and matches the slide-style flow animation.
  * @param {object} edgeSelection D3 selection of path.edge elements
  */
-const animateEdgeReveal = (edgeSelection) => {
+const animateEdgeReveal = (edgeSelection, baseDelay = 0) => {
   edgeSelection
     .sort((a, b) => {
-      if (a.targetLayerIndex !== b.targetLayerIndex) {
-        return a.targetLayerIndex - b.targetLayerIndex;
+      if (a.displayTargetLayerIndex !== b.displayTargetLayerIndex) {
+        return a.displayTargetLayerIndex - b.displayTargetLayerIndex;
       }
       if (a.targetNodeIndex !== b.targetNodeIndex) {
         return a.targetNodeIndex - b.targetNodeIndex;
       }
       return a.sourceNodeIndex - b.sourceNodeIndex;
     })
-    .each(function(d) {
+    .each(function (d) {
       let path = d3.select(this);
       let totalLength = this.getTotalLength();
       let intraLayerDelay =
@@ -538,15 +761,16 @@ const animateEdgeReveal = (edgeSelection) => {
 
       path
         .style('opacity', 0)
+        .style('visibility', 'visible')
         .style('stroke-dasharray', `${totalLength} ${totalLength}`)
         .style('stroke-dashoffset', totalLength)
         .transition('edge-reveal')
-        .delay((d.targetLayerIndex - 1) * edgeRevealLayerDelay + intraLayerDelay)
+        .delay(baseDelay + (d.displayTargetLayerIndex - 1) * edgeRevealLayerDelay + intraLayerDelay)
         .duration(edgeRevealDuration)
         .ease(d3.easeLinear)
         .style('opacity', edgeOpacity)
         .style('stroke-dashoffset', 0)
-        .on('end', function() {
+        .on('end', function () {
           d3.select(this)
             .style('stroke-dasharray', null)
             .style('stroke-dashoffset', null);
@@ -558,16 +782,21 @@ const animateEdgeReveal = (edgeSelection) => {
  * Animate small packets along the revealed edges.
  * @param {object} packetSelection D3 selection of circle elements
  */
-const animateEdgePackets = (packetSelection) => {
-  packetSelection.each(function(d) {
+const animateEdgePackets = (packetSelection, baseDelay = 0) => {
+  if (!ENABLE_EDGE_PACKETS) {
+    packetSelection.remove();
+    return;
+  }
+
+  packetSelection.each(function (d) {
     let circle = d3.select(this);
     let path = d.path;
     let totalLength = path.getTotalLength();
     let intraLayerDelay =
       (d.targetNodeIndex * 4 + d.sourceNodeIndex) * edgeRevealStagger;
     let revealDelay =
-      (d.targetLayerIndex - 1) * edgeRevealLayerDelay + intraLayerDelay;
-    let packetDelay = revealDelay + packetLayerOffset;
+      (d.displayTargetLayerIndex - 1) * edgeRevealLayerDelay + intraLayerDelay;
+    let packetDelay = baseDelay + revealDelay + packetLayerOffset;
 
     circle
       .style('opacity', 0)
@@ -587,6 +816,106 @@ const animateEdgePackets = (packetSelection) => {
       .style('opacity', 0)
       .remove();
   });
+}
+//Task 6.3
+const animateEdgeRevealForStep = (edgeSelection) => {
+  edgeSelection
+    .sort((a, b) => {
+      if (a.targetNodeIndex !== b.targetNodeIndex) {
+        return a.targetNodeIndex - b.targetNodeIndex;
+      }
+      return a.sourceNodeIndex - b.sourceNodeIndex;
+    })
+    .each(function (d) {
+      let path = d3.select(this);
+      let totalLength = this.getTotalLength();
+      let intraLayerDelay =
+        (d.targetNodeIndex * 4 + d.sourceNodeIndex) * edgeRevealStagger;
+
+      path
+        .interrupt('edge-reveal')
+        .style('opacity', 0)
+        .style('visibility', 'visible')
+        .style('pointer-events', 'none')
+        .style('stroke-dasharray', `${totalLength} ${totalLength}`)
+        .style('stroke-dashoffset', totalLength)
+        .transition('edge-reveal')
+        .delay(intraLayerDelay)
+        .duration(edgeRevealDuration)
+        .ease(d3.easeLinear)
+        .style('opacity', edgeOpacity)
+        .style('stroke-dashoffset', 0)
+        .on('end', function () {
+          d3.select(this)
+            .style('pointer-events', 'stroke')
+            .style('stroke-dasharray', null)
+            .style('stroke-dashoffset', null);
+        });
+    });
+}
+
+// Task 6.3
+const animateEdgePacketsForStep = (cnnGroup, edgeSelection) => {
+  let edges = edgeSelection.nodes();
+  let edgeAnimationData = edgeSelection.data().map((d, i) => {
+    let intraLayerDelay =
+      (d.targetNodeIndex * 4 + d.sourceNodeIndex) * edgeRevealStagger;
+
+    return {
+      ...d,
+      path: edges[i],
+      revealDelay: intraLayerDelay,
+      packetDelay: intraLayerDelay + manualRevealPacketOffset,
+    };
+  });
+
+  if (!ENABLE_EDGE_PACKETS) {
+    cnnGroup.select('g.edge-packet-group').remove();
+    animateNodeArrivalPulses(cnnGroup, edgeAnimationData);
+    return;
+  }
+
+  let packetGroup = cnnGroup.select('g.edge-packet-group');
+  if (packetGroup.empty()) {
+    packetGroup = cnnGroup.append('g')
+      .attr('class', 'edge-packet-group')
+      .style('pointer-events', 'none');
+  }
+
+  let packets = packetGroup.selectAll('circle.edge-packet-step')
+    .data(edgeAnimationData)
+    .enter()
+    .append('circle')
+    .attr('class', 'edge-packet edge-packet-step')
+    .attr('r', packetRadius)
+    .attr('transform', (d) => `translate(${d.source.x}, ${d.source.y})`)
+    .style('fill', (d) => getPacketColor(d))
+    .style('stroke', 'none')
+    .style('opacity', 0);
+
+  packets.each(function (d) {
+    let circle = d3.select(this);
+    let totalLength = d.path.getTotalLength();
+
+    circle
+      .transition('packet-fade-in')
+      .delay(d.packetDelay)
+      .duration(120)
+      .style('opacity', 1)
+      .transition('packet-travel')
+      .duration(packetTravelDuration)
+      .ease(d3.easeLinear)
+      .attrTween('transform', () => (t) => {
+        let point = d.path.getPointAtLength(t * totalLength);
+        return `translate(${point.x}, ${point.y})`;
+      })
+      .transition('packet-fade-out')
+      .duration(180)
+      .style('opacity', 0)
+      .remove();
+  });
+
+  animateNodeArrivalPulses(cnnGroup, edgeAnimationData);
 }
 
 /**
@@ -615,7 +944,7 @@ const animateNodeArrivalPulses = (cnnGroup, edgeData) => {
         width: isOutput ? nodeLength + 88 : nodeLength + 8,
         height: isOutput ? nodeLength + 10 : nodeLength + 8,
         radius: isOutput ? 7 : 4,
-        color: getPacketColor(edge.targetLayerIndex)
+        color: getPacketColor(edge)
       };
     }
   });
@@ -646,7 +975,7 @@ const animateNodeArrivalPulses = (cnnGroup, edgeData) => {
     .style('fill', (d) => d.color)
     .style('opacity', 0);
 
-  pulses.each(function(d) {
+  pulses.each(function (d) {
     d3.select(this)
       .transition('node-pulse-in')
       .delay(d.delay)
@@ -672,13 +1001,14 @@ const animateNodeArrivalPulses = (cnnGroup, edgeData) => {
 /**
  * Highlight the predicted output label after the packet flow reaches output.
  */
-const animateWinningOutputLabel = () => {
+const animateWinningOutputLabel = (baseDelay = 0) => {
   let outputLayer = cnn[cnn.length - 1];
   let winningIndex = getWinningOutputIndex(outputLayer);
-  let outputLayerRevealDelay =
-    (cnn.length - 2) * edgeRevealLayerDelay;
+  let styleTestMode = isStyleTestMode();
+  let outputLayerRevealDelay = manualRevealState.displayOrder.length ?
+    0 : (cnn.length - 2) * edgeRevealLayerDelay;
   let winnerDelay =
-    outputLayerRevealDelay + winnerLabelDelayOffset;
+    baseDelay + outputLayerRevealDelay + winnerLabelDelayOffset;
   let winnerCoords = nodeCoordinate[cnn.length - 1][winningIndex];
 
   let allLabels = svg.selectAll('text.output-text');
@@ -693,16 +1023,20 @@ const animateWinningOutputLabel = () => {
     .interrupt('winner-node-settle')
     .attr('transform', null);
 
-  allLabels.interrupt('winner-reset');
-  winnerLabel.interrupt('winner-highlight');
-  winnerBar.interrupt('winner-bar');
+  allLabels
+    .interrupt('winner-reset')
+    .interrupt('winner-highlight')
+    .interrupt('winner-settle');
+  svg.selectAll('rect.output-rect')
+    .interrupt('winner-bar')
+    .interrupt('winner-bar-settle');
   winnerGroup.interrupt('winner-node');
 
   allLabels
     .transition('winner-reset')
     .duration(250)
-    .style('fill', 'black')
-    .style('opacity', 0.58)
+    .style('fill', styleTestMode ? '#d8eef8' : 'black')
+    .style('opacity', styleTestMode ? 0.72 : 0.58)
     .style('font-size', '11px')
     .style('font-weight', '400')
     .style('text-decoration', 'none');
@@ -717,45 +1051,63 @@ const animateWinningOutputLabel = () => {
 
   svg.selectAll('g.output-winner-overlay').remove();
 
+  let winnerText = classLists[winningIndex];
+  let winnerCardWidth = styleTestMode
+    ? Math.max(104, winnerText.length * 7.5 + 36)
+    : nodeLength + 52;
   let overlay = svg.append('g')
     .attr('class', 'output-winner-overlay')
     .style('pointer-events', 'none')
     .style('opacity', 0);
 
   overlay.append('rect')
-    .attr('x', winnerCoords.x - 8)
-    .attr('y', winnerCoords.y - 5)
+    .attr('class', styleTestMode ? 'output-winner-card' : null)
+    .attr('x', winnerCoords.x - (styleTestMode ? 10 : 8))
+    .attr('y', winnerCoords.y - (styleTestMode ? 8 : 5))
     .attr('rx', 6)
     .attr('ry', 6)
-    .attr('width', nodeLength + 92)
-    .attr('height', nodeLength + 10)
-    .style('fill', packetColors.lightPurple)
-    .style('stroke', packetColors.purple)
-    .style('stroke-width', 1.5);
+    .attr('width', winnerCardWidth)
+    .attr('height', styleTestMode ? nodeLength + 16 : nodeLength + 10)
+    .style('fill', styleTestMode ? 'rgba(8, 31, 70, 0.94)' : packetColors.lightPurple)
+    .style('stroke', styleTestMode ? 'rgba(14, 252, 255, 0.58)' : packetColors.purple)
+    .style('stroke-width', styleTestMode ? 1.1 : 1.5);
+
+  if (styleTestMode) {
+    overlay.append('rect')
+      .attr('class', 'output-winner-accent')
+      .attr('x', winnerCoords.x - 10)
+      .attr('y', winnerCoords.y - 4)
+      .attr('rx', 2)
+      .attr('ry', 2)
+      .attr('width', 4)
+      .attr('height', nodeLength + 8)
+      .style('fill', packetColors.cyan);
+  }
 
   overlay.append('text')
-    .attr('x', winnerCoords.x)
+    .attr('class', styleTestMode ? 'output-winner-text' : null)
+    .attr('x', winnerCoords.x + (styleTestMode ? 8 : 0))
     .attr('y', winnerCoords.y + nodeLength / 2)
     .style('dominant-baseline', 'middle')
-    .style('font-size', '18px')
-    .style('font-weight', '900')
-    .style('fill', packetColors.purple)
-    .text(classLists[winningIndex]);
+    .style('font-size', styleTestMode ? '13px' : '18px')
+    .style('font-weight', styleTestMode ? '700' : '900')
+    .style('fill', styleTestMode ? '#f8fdff' : packetColors.purple)
+    .text(winnerText);
 
   winnerLabel
     .transition('winner-highlight')
     .delay(winnerDelay)
     .duration(220)
     .ease(d3.easeCubicOut)
-    .style('fill', packetColors.purple)
+    .style('fill', styleTestMode ? '#f8fdff' : packetColors.purple)
     .style('opacity', 1)
-    .style('font-size', '16px')
-    .style('font-weight', '800')
-    .style('text-decoration', 'underline')
+    .style('font-size', styleTestMode ? '12px' : '16px')
+    .style('font-weight', styleTestMode ? '600' : '800')
+    .style('text-decoration', styleTestMode ? 'none' : 'underline')
     .transition('winner-settle')
     .duration(180)
     .ease(d3.easeCubicOut)
-    .style('font-size', '15px');
+    .style('font-size', styleTestMode ? '12px' : '15px');
 
   winnerBar
     .transition('winner-bar')
@@ -777,11 +1129,11 @@ const animateWinningOutputLabel = () => {
     .delay(winnerDelay - 20)
     .duration(180)
     .ease(d3.easeBackOut.overshoot(1.4))
-    .attr('transform', 'translate(10, 0)')
+    .attr('transform', styleTestMode ? 'translate(4, 0)' : 'translate(10, 0)')
     .transition('winner-node-settle')
     .duration(220)
     .ease(d3.easeCubicOut)
-    .attr('transform', 'translate(6, 0)');
+    .attr('transform', styleTestMode ? 'translate(2, 0)' : 'translate(6, 0)');
 
   winnerGroup.select('text.output-rank')
     .transition('winner-rank')
@@ -802,24 +1154,61 @@ const animateWinningOutputLabel = () => {
 
 }
 
+const resetOutputWinnerAnimation = () => {
+  let styleTestMode = isStyleTestMode();
+  svg.selectAll('g.node-output')
+    .interrupt('winner-node')
+    .interrupt('winner-node-settle')
+    .attr('transform', null);
+
+  svg.selectAll('text.output-text')
+    .interrupt('winner-reset')
+    .interrupt('winner-highlight')
+    .interrupt('winner-settle')
+    .style('fill', styleTestMode ? '#d8eef8' : 'black')
+    .style('opacity', styleTestMode ? 0.72 : 0.58)
+    .style('font-size', '11px')
+    .style('font-weight', '400')
+    .style('text-decoration', 'none');
+
+  svg.selectAll('rect.output-rect')
+    .interrupt('winner-bar-reset')
+    .interrupt('winner-bar')
+    .interrupt('winner-bar-settle')
+    .style('fill', '#9AA4B2')
+    .style('opacity', 0.72)
+    .attr('height', nodeLength / 4)
+    .attr('y', (d, i) => nodeCoordinate[cnn.length - 1][i].y + nodeLength / 2 + 8);
+
+  svg.selectAll('text.output-rank')
+    .interrupt('winner-rank')
+    .style('fill', null)
+    .style('opacity', null);
+
+  svg.selectAll('g.output-winner-overlay')
+    .interrupt('winner-overlay')
+    .interrupt('winner-overlay-settle')
+    .remove();
+}
+
 /**
  * Replay the overview edge reveal and packet flow.
  * Used on first draw and when the selected input image changes.
  * @param {object} cnnGroup D3 group containing the network
  */
-const replayEdgeAnimations = (cnnGroup) => {
+const replayEdgeAnimations = (cnnGroup, baseDelay = 0) => {
   let edges = cnnGroup.select('g.edge-group').selectAll('path.edge');
   let edgeAnimationData = edges.data().map((d, i) => {
     let intraLayerDelay =
       (d.targetNodeIndex * 4 + d.sourceNodeIndex) * edgeRevealStagger;
     let revealDelay =
-      (d.targetLayerIndex - 1) * edgeRevealLayerDelay + intraLayerDelay;
+      (d.displayTargetLayerIndex - 1) * edgeRevealLayerDelay + intraLayerDelay;
 
     return {
       ...d,
       path: edges.nodes()[i],
       revealDelay: revealDelay,
-      packetDelay: revealDelay + packetLayerOffset
+      packetDelay: baseDelay + revealDelay + packetLayerOffset
     };
   });
 
@@ -829,7 +1218,7 @@ const replayEdgeAnimations = (cnnGroup) => {
     .style('stroke-dasharray', null)
     .style('stroke-dashoffset', null);
 
-  animateEdgeReveal(edges);
+  animateEdgeReveal(edges, baseDelay);
 
   cnnGroup.select('g.edge-packet-group').remove();
 
@@ -844,13 +1233,312 @@ const replayEdgeAnimations = (cnnGroup) => {
     .attr('class', 'edge-packet')
     .attr('r', packetRadius)
     .attr('transform', (d) => `translate(${d.source.x}, ${d.source.y})`)
-    .style('fill', (d) => getPacketColor(d.targetLayerIndex))
+    .style('fill', (d) => getPacketColor(d))
     .style('stroke', 'none')
     .style('opacity', 0);
 
-  animateEdgePackets(packets);
+  animateEdgePackets(packets, baseDelay);
   animateNodeArrivalPulses(cnnGroup, edgeAnimationData);
-  animateWinningOutputLabel();
+  animateWinningOutputLabel(baseDelay);
+}
+
+const setLayerRevealVisibility = (cnnGroup, layerIndex, visible, duration = 0) => {
+  let compactTargetOpacity = detailedMode ? 0 : 0.8;
+  let detailedTargetOpacity = detailedMode ? 0.7 : 0;
+
+  let layerGroup = cnnGroup.select(`#cnn-layer-group-${layerIndex}`);
+  let compactLabel = svg.select(`#layer-label-${layerIndex}`);
+  let detailedLabel = svg.select(`#layer-detailed-label-${layerIndex}`);
+
+  layerGroup.interrupt('manual-layer-reveal');
+  compactLabel.interrupt('manual-label-reveal');
+  detailedLabel.interrupt('manual-detail-label-reveal');
+
+  if (duration > 0) {
+    layerGroup
+      .transition('manual-layer-reveal')
+      .duration(duration)
+      .ease(d3.easeCubicOut)
+      .style('opacity', visible ? 1 : 0)
+      .style('pointer-events', visible ? 'all' : 'none');
+
+    compactLabel
+      .transition('manual-label-reveal')
+      .duration(duration)
+      .style('opacity', visible ? compactTargetOpacity : 0);
+
+    detailedLabel
+      .transition('manual-detail-label-reveal')
+      .duration(duration)
+      .style('opacity', visible ? detailedTargetOpacity : 0);
+    return;
+  }
+
+  layerGroup
+    .style('opacity', visible ? 1 : 0)
+    .style('pointer-events', visible ? 'all' : 'none');
+  compactLabel.style('opacity', visible ? compactTargetOpacity : 0);
+  detailedLabel.style('opacity', visible ? detailedTargetOpacity : 0);
+}
+
+const updateRevealLayerHierarchy = () => {
+  if (!isStyleTestMode() || !manualRevealState.displayOrder.length) {
+    return;
+  }
+
+  let activeDisplayIndex = Math.max(0, manualRevealState.nextDisplayIndex - 1);
+  let activeLayerIndex = manualRevealState.displayOrder[activeDisplayIndex];
+  updateStyleTestLayerHierarchy(activeLayerIndex);
+}
+
+const updateRevealControl = (controlGroup) => {
+  let hasMore = manualRevealState.nextDisplayIndex < manualRevealState.displayOrder.length;
+  let nextLayerIndex = hasMore ?
+    manualRevealState.displayOrder[manualRevealState.nextDisplayIndex] : null;
+  let nextLabel = hasMore ? cnn[nextLayerIndex][0].layerName : 'complete';
+  let shownCount = Math.min(manualRevealState.nextDisplayIndex, manualRevealState.displayOrder.length);
+  let progressText = `${shownCount}/${manualRevealState.displayOrder.length}`;
+  manualLayerRevealStore.set({
+    hasMore,
+    nextLabel,
+    progressText,
+  });
+
+  controlGroup.select('text.reveal-control-main')
+    .text(hasMore ? `Show ${nextLabel}` : 'All layers shown')
+    .style('font-size', '14px')
+    .style('font-weight', 600)
+    .style('fill', '#9aa0a6')
+    .style('opacity', 1);
+
+  controlGroup.select('text.reveal-control-progress')
+    .text(progressText)
+    .style('fill', '#9aa0a6')
+    .style('opacity', 1);
+
+  controlGroup.select('text.reveal-control-icon')
+    .text(hasMore ? '›' : '✓')
+    .style('font-size', '16px')
+    .style('fill', '#9aa0a6')
+    .style('opacity', 1);
+
+  controlGroup.select('rect.reveal-control-bg')
+    .attr('rx', 8)
+    .attr('ry', 8)
+    .style('fill', '#f8f8f8')
+    .style('stroke', '#d9d9d9')
+    .style('stroke-width', 1);
+
+  controlGroup
+    .style('cursor', 'pointer')
+    .style('pointer-events', 'all')
+    .style('opacity', 1);
+}
+
+const resetManualLayerReveal = (cnnGroup, controlGroup) => {
+  cnnGroup.select('g.edge-packet-group').remove();
+  cnnGroup.select('g.node-pulse-group').remove();
+  resetOutputWinnerAnimation();
+
+  cnnGroup.select('g.edge-group').selectAll('path.edge')
+    .interrupt('edge-reveal')
+    .style('opacity', 0)
+    .style('visibility', 'hidden')
+    .style('pointer-events', 'none')
+    .style('stroke-dasharray', null)
+    .style('stroke-dashoffset', null)
+    .style('stroke', edgeInitColor)
+    .style('stroke-width', edgeStrokeWidth);
+
+  manualRevealState.nextDisplayIndex = 1;
+
+  manualRevealState.displayOrder.forEach((layerIndex, displayIndex) => {
+    setLayerRevealVisibility(cnnGroup, layerIndex, displayIndex === 0);
+  });
+  updateRevealLayerHierarchy();
+
+  cnnGroup.select('g.input-annotation')
+    .interrupt()
+    .style('opacity', 1);
+
+  applyCurrentEdgeVisibility();
+  updateRevealControl(controlGroup);
+}
+
+const revealNextLayerStep = (cnnGroup, controlGroup) => {
+  if (manualRevealState.nextDisplayIndex >= manualRevealState.displayOrder.length) {
+    resetManualLayerReveal(cnnGroup, controlGroup);
+    return;
+  }
+
+  let displayIndex = manualRevealState.nextDisplayIndex;
+  let layerIndex = manualRevealState.displayOrder[displayIndex];
+
+  setLayerRevealVisibility(cnnGroup, layerIndex, true, layerRevealDuration);
+
+  let edgeSelection = cnnGroup.select('g.edge-group')
+    .selectAll('path.edge')
+    .filter((d) => d.displayTargetLayerIndex === displayIndex);
+
+  animateEdgeRevealForStep(edgeSelection);
+  animateEdgePacketsForStep(cnnGroup, edgeSelection);
+
+  if (layerIndex === cnn.length - 1) {
+    animateWinningOutputLabel(packetTravelDuration + winnerLabelDelayOffset);
+  }
+
+  manualRevealState.nextDisplayIndex += 1;
+  updateRevealLayerHierarchy();
+  updateRevealControl(controlGroup);
+}
+
+export const revealNextOverviewLayer = () => {
+  if (!manualRevealState.cnnGroup || !manualRevealState.controlGroup) {
+    return;
+  }
+  revealNextLayerStep(manualRevealState.cnnGroup, manualRevealState.controlGroup);
+}
+
+export const canRevealNextOverviewLayer = () =>
+  Boolean(
+    manualRevealState.cnnGroup &&
+    manualRevealState.controlGroup &&
+    manualRevealState.nextDisplayIndex < manualRevealState.displayOrder.length,
+  );
+
+export const resetOverviewLayerReveal = () => {
+  if (!manualRevealState.cnnGroup || !manualRevealState.controlGroup) {
+    return;
+  }
+
+  resetManualLayerReveal(manualRevealState.cnnGroup, manualRevealState.controlGroup);
+}
+
+export const revealOverviewThroughLayer = (layerIndex) => {
+  if (!manualRevealState.cnnGroup || !manualRevealState.controlGroup) {
+    return;
+  }
+
+  let targetDisplayIndex = manualRevealState.displayOrder.indexOf(layerIndex);
+  if (targetDisplayIndex < 0) {
+    return;
+  }
+
+  let nextDisplayIndex = Math.max(
+    manualRevealState.nextDisplayIndex,
+    targetDisplayIndex + 1,
+  );
+  for (let displayIndex = 0; displayIndex < nextDisplayIndex; displayIndex++) {
+    setLayerRevealVisibility(
+      manualRevealState.cnnGroup,
+      manualRevealState.displayOrder[displayIndex],
+      true,
+    );
+  }
+
+  manualRevealState.nextDisplayIndex = nextDisplayIndex;
+  updateRevealLayerHierarchy();
+  applyCurrentEdgeVisibility();
+  updateRevealControl(manualRevealState.controlGroup);
+}
+
+const initializeManualLayerReveal = (cnnGroup) => {
+  let displayOrder = getDisplayOrder();
+  manualRevealState = {
+    displayOrder,
+    nextDisplayIndex: 1,
+    cnnGroup,
+    controlGroup: undefined,
+  };
+
+  cnnGroup.select('g.edge-packet-group').remove();
+  cnnGroup.select('g.node-pulse-group').remove();
+  resetOutputWinnerAnimation();
+
+  cnnGroup.select('g.edge-group').selectAll('path.edge')
+    .interrupt('edge-reveal')
+    .style('opacity', 0)
+    .style('visibility', 'hidden')
+    .style('pointer-events', 'none')
+    .style('stroke-dasharray', null)
+    .style('stroke-dashoffset', null);
+
+  applyCurrentEdgeVisibility();
+
+  displayOrder.forEach((layerIndex, displayIndex) => {
+    setLayerRevealVisibility(cnnGroup, layerIndex, displayIndex === 0);
+  });
+  updateRevealLayerHierarchy();
+
+  cnnGroup.select('g.input-annotation')
+    .style('opacity', 1);
+
+  // The Svelte toolbar owns the visible reveal control. Keep an empty D3
+  // selection for the existing reveal-state helpers without drawing a second
+  // button inside the CNN SVG.
+  let controlGroup = d3.select(null);
+
+  manualRevealState.controlGroup = controlGroup;
+  updateRevealControl(controlGroup);
+}
+
+const animateOverviewReveal = (cnnGroup) => {
+  // Task 3 at lines 922-971: reveal the overview layer-by-layer first, then
+  // replay the edge and packet animations after the layers are visible.
+  let displayOrder = getDisplayOrder();
+  let stageGroups = cnnGroup.select('g.stage-grouping').selectAll('g.stage-group');
+  let inputAnnotation = cnnGroup.select('g.input-annotation');
+  let totalRevealDelay = Math.max(cnn.length - 1, 0) * layerRevealStagger + layerRevealDuration;
+
+  stageGroups
+    .style('opacity', 0)
+    .transition('stage-reveal')
+    .delay(layerRevealStagger)
+    .duration(layerRevealDuration * 2)
+    .style('opacity', 1);
+
+  displayOrder.forEach((layerIndex, i) => {
+    let layerGroup = cnnGroup.select(`#cnn-layer-group-${layerIndex}`);
+    layerGroup
+      .style('opacity', 0)
+      .transition('layer-reveal')
+      .delay(i * layerRevealStagger)
+      .duration(layerRevealDuration)
+      .ease(d3.easeCubicOut)
+      .style('opacity', 1);
+
+    let compactLabel = svg.select(`#layer-label-${layerIndex}`);
+    let detailedLabel = svg.select(`#layer-detailed-label-${layerIndex}`);
+    let compactTargetOpacity = detailedMode ? 0 : 0.8;
+    let detailedTargetOpacity = detailedMode ? 0.7 : 0;
+
+    compactLabel
+      .style('opacity', 0)
+      .transition('label-reveal')
+      .delay(i * layerRevealStagger + 80)
+      .duration(layerRevealDuration)
+      .style('opacity', compactTargetOpacity);
+
+    detailedLabel
+      .style('opacity', 0)
+      .transition('detail-label-reveal')
+      .delay(i * layerRevealStagger + 80)
+      .duration(layerRevealDuration)
+      .style('opacity', detailedTargetOpacity);
+  });
+
+  if (isStyleTestMode()) {
+    updateStyleTestLayerHierarchy(displayOrder[displayOrder.length - 1]);
+  }
+
+  inputAnnotation
+    .style('opacity', 0)
+    .transition('input-annotation-reveal')
+    .delay(layerRevealStagger)
+    .duration(layerRevealDuration)
+    .style('opacity', 1);
+
+  replayEdgeAnimations(cnnGroup, totalRevealDelay);
 }
 
 /**
@@ -864,11 +1552,54 @@ const replayEdgeAnimations = (cnnGroup) => {
  */
 export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
   nodeMouseLeaveHandler, nodeClickHandler) => {
+  // Task 3 at lines 990-1018: compute x positions from the selected display
+  // order instead of assuming one fixed historical architecture.
   // Draw the CNN
-  // There are 8 short gaps and 5 long gaps
-  hSpaceAroundGap = (width - nodeLength * numLayers) / (8 + 5 * gapRatio);
+  // Compute spacing from the actual displayed architecture instead of assuming
+  // the original 2-block network.
+  // let displayOrder = getDisplayOrder();
+  // let totalGapUnits = 0;
+  // for (let di = 1; di < displayOrder.length; di++) {
+  //   let curLayer = cnn[displayOrder[di]];
+  //   let isLongGap = curLayer[0].layerName === 'output' ||
+  //     curLayer[0].type === 'conv';
+  //   totalGapUnits += isLongGap ? gapRatio : 1;
+  // }
+  // Task 5 at lines 1020-1025
+  let displayOrder = getDisplayOrder();
+  let totalGapUnits = 0;
+  for (let di = 1; di < displayOrder.length; di++) {
+    let curLayer = cnn[displayOrder[di]];
+    totalGapUnits += getDisplayGapWeight(curLayer); //totalGapUnits = 1 + 1 + 1 + 2 = 5
+  }
+
+  hSpaceAroundGap = (width - nodeLength * cnn.length) / totalGapUnits;
   hSpaceAroundGapStore.set(hSpaceAroundGap);
+  let leftByLayerIndex = new Map();
   let leftAccuumulatedSpace = 0;
+
+  for (let di = 0; di < displayOrder.length; di++) {
+    let layerIndex = displayOrder[di];
+    let curLayer = cnn[layerIndex];
+    // let isOutput = curLayer[0].layerName === 'output';
+
+    // if (di > 0) {
+    //   if (isOutput || curLayer[0].type === 'conv') {
+    //     leftAccuumulatedSpace += hSpaceAroundGap * gapRatio;
+    //   } else {
+    //     leftAccuumulatedSpace += hSpaceAroundGap;
+    //   }
+    // }
+    // Task 5 at lines 1045-1049
+    let isOutput = curLayer[0].layerName === 'output';
+
+    if (di > 0) {
+      leftAccuumulatedSpace += hSpaceAroundGap * getDisplayGapWeight(curLayer);
+    }
+
+    leftByLayerIndex.set(layerIndex, leftAccuumulatedSpace);
+    leftAccuumulatedSpace += nodeLength;
+  }
 
   // Iterate through the cnn to draw nodes in each layer
   for (let l = 0; l < cnn.length; l++) {
@@ -877,16 +1608,8 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
 
     nodeCoordinate.push([]);
 
-    // Compute the x coordinate of the whole layer
-    // Output layer and conv layer has long gaps
-    if (isOutput || curLayer[0].type === 'conv') {
-      leftAccuumulatedSpace += hSpaceAroundGap * gapRatio;
-    } else {
-      leftAccuumulatedSpace += hSpaceAroundGap;
-    }
-
     // All nodes share the same x coordiante (left in div style)
-    let left = leftAccuumulatedSpace;
+    let left = leftByLayerIndex.get(l);
 
     let layerGroup = cnnGroup.append('g')
       .attr('class', 'cnn-layer-group')
@@ -914,22 +1637,39 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
         // https://bugs.webkit.org/show_bug.cgi?id=23113
         let top = i * nodeLength + (i + 1) * vSpaceAroundGap;
         top += svgPaddings.top;
-        nodeCoordinate[l].push({x: left, y: top});
-        return `layer-${l}-node-${i}`
-      });
-    
+      nodeCoordinate[l].push({ x: left, y: top });
+      return `layer-${l}-node-${i}`
+    });
+
+    let layerTop = svgPaddings.top - 16;
+    let layerHeight = height + 34;
+    layerGroup.insert('rect', ':first-child')
+      .attr('class', 'layer-hover-outline')
+      .attr('x', left - 14)
+      .attr('y', layerTop)
+      .attr('width', nodeLength + 28)
+      .attr('height', layerHeight)
+      .attr('rx', 16)
+      .attr('ry', 16)
+      .style('fill', 'rgba(248, 250, 252, 0.18)')
+      .style('stroke', '#94a3b8')
+      .style('stroke-width', 1.2)
+      .style('stroke-dasharray', '7 5')
+      .style('opacity', 0)
+      .style('pointer-events', 'none');
+
     // Overwrite the mouseover and mouseleave function for output nodes to show
     // hover info in the UI
     layerGroup.selectAll('g.node-output')
       .on('mouseover', (d, i, g) => {
         nodeMouseOverHandler(d, i, g);
-        hoverInfoStore.set( {show: true, text: `Output value: ${formater(d.output)}`} );
+        hoverInfoStore.set({ show: true, text: `Output value: ${formater(d.output)}` });
       })
       .on('mouseleave', (d, i, g) => {
         nodeMouseLeaveHandler(d, i, g);
-        hoverInfoStore.set( {show: false, text: `Output value: ${formater(d.output)}`} );
+        hoverInfoStore.set({ show: false, text: `Output value: ${formater(d.output)}` });
       });
-    
+
     if (curLayer[0].layerName !== 'output') {
       // Embed raster image in these groups
       nodeGroups.append('image')
@@ -938,7 +1678,7 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
         .attr('height', nodeLength)
         .attr('x', left)
         .attr('y', (d, i) => nodeCoordinate[l][i].y);
-      
+
       // Add a rectangle to show the border
       nodeGroups.append('rect')
         .attr('class', 'bounding')
@@ -967,7 +1707,7 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
         .style('fill', 'black')
         .style('opacity', 0.5)
         .text((d, i) => classLists[i]);
-      
+
       // Add annotation text to tell readers the exact output probability
       // nodeGroups.append('text')
       //   .attr('class', 'annotation-text')
@@ -976,7 +1716,6 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
       //   .attr('y', (d, i) => nodeCoordinate[l][i].y + 10)
       //   .text(d => `(${d3.format('.4f')(d.output)})`);
     }
-    leftAccuumulatedSpace += nodeLength;
   }
 
   // Share the nodeCoordinate
@@ -985,8 +1724,8 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
   // Compute the scale of the output score width (mapping the the node
   // width to the max output score)
   let outputRectScale = d3.scaleLinear()
-        .domain(cnnLayerRanges.output)
-        .range([0, nodeLength]);
+    .domain(cnnLayerRanges.output)
+    .range([0, nodeLength]);
 
   // Draw the canvas
   for (let l = 0; l < cnn.length; l++) {
@@ -1012,14 +1751,29 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
     } else {
       return {
         name: d[0].layerName,
-        dimension: `(${d[0].output.length}, ${d[0].output.length}, ${d.length})`
+        dimension: d[0].output.length === undefined ?
+          `(${d.length})` :
+          `(${d[0].output.length}, ${d[0].output.length}, ${d.length})`
       }
     }
   });
 
-  let svgHeight = Number(d3.select('#cnn-svg').style('height').replace('px', '')) + 150;
-  let scroll = new SmoothScroll('a[href*="#"]', {offset: -svgHeight});
-  
+  // Task 5 at line 1196-1202
+  let getLayerNameParts = (name) => {
+    if (isStyleTestMode()) {
+      return [formatLayerLabel(name)];
+    }
+
+    if (name.includes('max_pool')) {
+      return ['max', name.replace('max_', '')];
+    }
+    if (name.includes('avg_pool')) {
+      return ['avg', name.replace('avg_', '')];
+    }
+
+    return [name];
+  };
+
   let detailedLabels = svg.selectAll('g.layer-detailed-label')
     .data(layerNames)
     .enter()
@@ -1029,38 +1783,67 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
     .classed('hidden', !detailedMode)
     .attr('transform', (d, i) => {
       let x = nodeCoordinate[i][0].x + nodeLength / 2;
-      let y = (svgPaddings.top + vSpaceAroundGap) / 2 - 6;
+      let y = (svgPaddings.top + vSpaceAroundGap) / 2 - 8;
       return `translate(${x}, ${y})`;
     })
-    .style('cursor', d => d.name.includes('output') ? 'default' : 'help')
-    .on('click', (d) => {
-      let target = '';
-      if (d.name.includes('conv')) { target = 'convolution' }
-      if (d.name.includes('relu')) { target = 'relu' }
-      if (d.name.includes('max_pool')) { target = 'pooling'}
-      if (d.name.includes('input')) { target = 'input'}
+    .style('cursor', 'default')
+    .on('mouseenter', (d, i) => setLayerHoverState(i, true))
+    .on('mouseleave', (d, i) => setLayerHoverState(i, false));
 
-      // Scroll to a article element
-      let anchor = document.querySelector(`#article-${target}`);
-      scroll.animateScroll(anchor);
-    });
-  
-  detailedLabels.append('title')
-    .text('Move to article section');
-    
-  detailedLabels.append('text')
+  detailedLabels.insert('rect', ':first-child')
+    .attr('class', 'layer-label-highlight')
+    .attr('x', -34)
+    .attr('y', -15)
+    .attr('rx', 3)
+    .attr('ry', 3)
+    .attr('width', 68)
+    .attr('height', 18)
+    .style('fill', '#FEF08A')
+    .style('opacity', 0)
+    .style('pointer-events', 'all');
+
+  let detailedLabelText = detailedLabels.append('text')
     .style('opacity', 0.7)
-    .style('dominant-baseline', 'middle')
-    .append('tspan')
-    .style('font-size', '12px')
-    .text(d => d.name)
-    .append('tspan')
+    .style('dominant-baseline', 'middle');
+
+  detailedLabelText.each(function (d) {
+    let text = d3.select(this);
+    let nameParts = getLayerNameParts(d.name);
+    nameParts.forEach((part, partIndex) => {
+      text.append('tspan')
+        .style('font-size', '10px')
+        .style('font-weight', 800)
+        .attr('x', 0)
+        .attr('dy', partIndex === 0 ? 0 : '1em')
+        .text(part);
+    });
+
+    text.append('tspan')
+      .style('font-size', '7px')
+      .style('font-weight', 'normal')
+      .attr('x', 0)
+      .attr('dy', '1.2em')
+      .text(d.dimension);
+
+  });
+
+  /*
+    Previous single-line label version. Kept here as reference because long
+    names such as MAX_POOL_1 overlap when many trained-order layers are visible.
+    detailedLabels.append('text')
+      .style('opacity', 0.7)
+      .style('dominant-baseline', 'middle')
+      .append('tspan')
+      .style('font-size', '12px')
+      .text(d => d.name)
+      .append('tspan')
     .style('font-size', '8px')
     .style('font-weight', 'normal')
     .attr('x', 0)
     .attr('dy', '1.5em')
     .text(d => d.dimension);
-  
+  */
+
   let labels = svg.selectAll('g.layer-label')
     .data(layerNames)
     .enter()
@@ -1073,29 +1856,32 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
       let y = (svgPaddings.top + vSpaceAroundGap) / 2 + 5;
       return `translate(${x}, ${y})`;
     })
-    .style('cursor', d => d.name.includes('output') ? 'default' : 'help')
-    .on('click', (d) => {
-      let target = '';
-      if (d.name.includes('conv')) { target = 'convolution' }
-      if (d.name.includes('relu')) { target = 'relu' }
-      if (d.name.includes('max_pool')) { target = 'pooling'}
-      if (d.name.includes('input')) { target = 'input'}
+    .style('cursor', 'default')
+    .on('mouseenter', (d, i) => setLayerHoverState(i, true))
+    .on('mouseleave', (d, i) => setLayerHoverState(i, false));
 
-      // Scroll to a article element
-      let anchor = document.querySelector(`#article-${target}`);
-      scroll.animateScroll(anchor);
-    });
-  
-  labels.append('title')
-    .text('Move to article section');
-  
+  labels.insert('rect', ':first-child')
+    .attr('class', 'layer-label-highlight')
+    .attr('x', -30)
+    .attr('y', -12)
+    .attr('rx', 3)
+    .attr('ry', 3)
+    .attr('width', 60)
+    .attr('height', 18)
+    .style('fill', '#FEF08A')
+    .style('opacity', 0)
+    .style('pointer-events', 'all');
+
   labels.append('text')
     .style('dominant-baseline', 'middle')
     .style('opacity', 0.8)
     .text(d => {
+      if (isStyleTestMode()) { return formatLayerLabel(d.name) }
       if (d.name.includes('conv')) { return 'conv' }
       if (d.name.includes('relu')) { return 'relu' }
-      if (d.name.includes('max_pool')) { return 'max_pool'}
+      if (d.name.includes('sigmoid')) { return 'sigmoid' } //Task 6.2
+      if (d.name.includes('avg_pool')) { return 'avg_pool' }
+      if (d.name.includes('max_pool')) { return 'pool' }
       return d.name
     });
 
@@ -1105,56 +1891,71 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
 
   let legendHeight = 5;
   let legends = svg.append('g')
-      .attr('class', 'color-legend')
-      .attr('transform', `translate(${0}, ${
-        svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
-        nodeLength * 10
+    .attr('class', 'color-legend')
+    .attr('transform', `translate(${0}, ${svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
+      nodeLength * 10
       })`);
-  
+
   drawLegends(legends, legendHeight);
 
   // Add edges between nodes
   let linkGen = d3.linkHorizontal()
     .x(d => d.x)
     .y(d => d.y);
-  
-  let linkData = getLinkData(nodeCoordinate, cnn);
+  //Task 4 at lines 1322-1333: compute the link data based on the actual displayed architecture and the node coordinates, instead of assuming a fixed architecture and coordinate pattern.
+  let displayIndexLookup = getDisplayLayerIndexLookup();
+  let isModelDisplayOrder = displayOrder.every((layerIndex, index) => layerIndex === index);
+  let rawLinkData = isModelDisplayOrder ?
+    getLinkData(nodeCoordinate, cnn) :
+    buildDisplayOrderLinkData(nodeCoordinate, cnn, displayOrder);
+  let linkData = rawLinkData.map((link) => ({
+    ...link,
+    sourceLayerIndex: link.sourceLayerIndex ?? (link.targetLayerIndex - 1),
+    targetLayerType: link.targetLayerType ?? cnn[link.targetLayerIndex][0].type,
+    displaySourceLayerIndex: link.displaySourceLayerIndex ?? displayIndexLookup.get(link.sourceLayerIndex ?? (link.targetLayerIndex - 1)),
+    displayTargetLayerIndex: link.displayTargetLayerIndex ?? displayIndexLookup.get(link.targetLayerIndex),
+  }));
 
   let edgeGroup = cnnGroup.append('g')
     .attr('class', 'edge-group');
-  
+
   let edges = edgeGroup.selectAll('path.edge')
     .data(linkData)
     .enter()
     .append('path')
     .attr('class', d =>
       `edge edge-${d.targetLayerIndex} edge-${d.targetLayerIndex}-${d.targetNodeIndex}`)
-    .attr('id', d => 
+    .attr('id', d =>
       `edge-${d.targetLayerIndex}-${d.targetNodeIndex}-${d.sourceNodeIndex}`)
-    .attr('d', d => linkGen({source: d.source, target: d.target}))
+    .attr('d', d => linkGen({ source: d.source, target: d.target }))
     .style('fill', 'none')
     .style('stroke-width', edgeStrokeWidth)
-    .style('opacity', edgeOpacity)
+    .style('opacity', 0)
+    .style('visibility', 'hidden')
+    .style('pointer-events', 'none')
     .style('stroke', edgeInitColor);
-
-  replayEdgeAnimations(cnnGroup);
 
   // Add input channel annotations
   let inputAnnotation = cnnGroup.append('g')
     .attr('class', 'input-annotation');
 
+  // PYTORCH_BACKEND_INTEGRATION:
+  // The old TensorFlow.js demos use RGB inputs. PyTorch MNIST models use one
+  // grayscale channel, so the active code below adapts to the actual number of
+  // input nodes. The original RGB-only code is preserved here for reference:
+  /*
   let redChannel = inputAnnotation.append('text')
     .attr('x', nodeCoordinate[0][0].x + nodeLength / 2)
     .attr('y', nodeCoordinate[0][0].y + nodeLength + 5)
     .attr('class', 'annotation-text')
     .style('dominant-baseline', 'hanging')
     .style('text-anchor', 'middle');
-  
+
   redChannel.append('tspan')
     .style('dominant-baseline', 'hanging')
     .style('fill', '#C95E67')
     .text('Red');
-  
+
   redChannel.append('tspan')
     .style('dominant-baseline', 'hanging')
     .text(' channel');
@@ -1176,6 +1977,27 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
     .style('text-anchor', 'middle')
     .style('fill', '#3F7FBC')
     .text('Blue');
+  */
+  let inputChannelLabels = cnn[0].length === 1
+    ? [{ text: 'Input', color: '#475569' }]
+    : [
+      { text: 'Red channel', color: '#C95E67' },
+      { text: 'Green', color: '#3DB665' },
+      { text: 'Blue', color: '#3F7FBC' },
+    ];
+
+  inputChannelLabels.slice(0, cnn[0].length).forEach((label, channelIndex) => {
+    inputAnnotation.append('text')
+      .attr('x', nodeCoordinate[0][channelIndex].x + nodeLength / 2)
+      .attr('y', nodeCoordinate[0][channelIndex].y + nodeLength + 5)
+      .attr('class', 'annotation-text')
+      .style('dominant-baseline', 'hanging')
+      .style('text-anchor', 'middle')
+      .style('fill', label.color)
+      .text(label.text);
+  });
+
+  initializeManualLayerReveal(cnnGroup);
 }
 
 /**
@@ -1185,8 +2007,8 @@ export const updateCNN = () => {
   // Compute the scale of the output score width (mapping the the node
   // width to the max output score)
   let outputRectScale = d3.scaleLinear()
-      .domain(cnnLayerRanges.output)
-      .range([0, nodeLength]);
+    .domain(cnnLayerRanges.output)
+    .range([0, nodeLength]);
 
   // Rebind the cnn data to layer groups layer by layer
   for (let l = 0; l < cnn.length; l++) {
@@ -1203,7 +2025,7 @@ export const updateCNN = () => {
         .duration(300)
         .ease(d3.easeCubicOut)
         .style('opacity', 0)
-        .on('end', function() {
+        .on('end', function () {
           d3.select(this)
             .select('image.node-image')
             .each((d, i, g) => drawOutput(d, i, g, range));
@@ -1219,9 +2041,12 @@ export const updateCNN = () => {
     }
   }
 
+  let visibleLayerCount = cnn.length || numLayers;
+  let numOfComponent = Math.max(1, Math.ceil((visibleLayerCount - 2) / 5));
+
   // Update the color scale legend
   // Local legends
-  for (let i = 0; i < 2; i++){
+  for (let i = 0; i < numOfComponent; i++) {
     let start = 1 + i * 5;
     let range1 = cnnLayerRanges.local[start];
     let range2 = cnnLayerRanges.local[start + 2];
@@ -1229,7 +2054,7 @@ export const updateCNN = () => {
     let localLegendScale1 = d3.scaleLinear()
       .range([0, 2 * nodeLength + hSpaceAroundGap])
       .domain([-range1 / 2, range1 / 2]);
-    
+
     let localLegendScale2 = d3.scaleLinear()
       .range([0, 3 * nodeLength + 2 * hSpaceAroundGap])
       .domain([-range2 / 2, range2 / 2]);
@@ -1238,18 +2063,18 @@ export const updateCNN = () => {
       .scale(localLegendScale1)
       .tickFormat(d3.format('.2f'))
       .tickValues([-range1 / 2, 0, range1 / 2]);
-    
+
     let localLegendAxis2 = d3.axisBottom()
       .scale(localLegendScale2)
       .tickFormat(d3.format('.2f'))
       .tickValues([-range2 / 2, 0, range2 / 2]);
-    
+
     svg.select(`g#local-legend-${i}-1`).select('g').call(localLegendAxis1);
     svg.select(`g#local-legend-${i}-2`).select('g').call(localLegendAxis2);
   }
 
   // Module legend
-  for (let i = 0; i < 2; i++){
+  for (let i = 0; i < numOfComponent; i++) {
     let start = 1 + i * 5;
     let range = cnnLayerRanges.local[start];
 
@@ -1261,8 +2086,8 @@ export const updateCNN = () => {
     let moduleLegendAxis = d3.axisBottom()
       .scale(moduleLegendScale)
       .tickFormat(d3.format('.2f'))
-      .tickValues([-range, -(range / 2), 0, range/2, range]);
-    
+      .tickValues([-range, -(range / 2), 0, range / 2, range]);
+
     svg.select(`g#module-legend-${i}`).select('g').call(moduleLegendAxis);
   }
 
@@ -1278,7 +2103,7 @@ export const updateCNN = () => {
   let globalLegendAxis = d3.axisBottom()
     .scale(globalLegendScale)
     .tickFormat(d3.format('.2f'))
-    .tickValues([-range, -(range / 2), 0, range/2, range]);
+    .tickValues([-range, -(range / 2), 0, range / 2, range]);
 
   svg.select(`g#global-legend`).select('g').call(globalLegendAxis);
 
@@ -1287,10 +2112,24 @@ export const updateCNN = () => {
     .scale(outputRectScale)
     .tickFormat(d3.format('.1f'))
     .tickValues([0, cnnLayerRanges.output[1]]);
-  
+
   svg.select('g#output-legend').select('g').call(outputLegendAxis);
 
-  replayEdgeAnimations(svg.select('g.cnn-group'));
+  let cnnGroup = svg.select('g.cnn-group');
+  cnnGroup.selectAll('g.cnn-layer-group')
+    .interrupt()
+    .style('opacity', 0);
+  cnnGroup.selectAll('g.stage-grouping g.stage-group')
+    .interrupt()
+    .style('opacity', 0);
+  svg.selectAll('g.layer-label, g.layer-detailed-label')
+    .interrupt()
+    .style('opacity', 0);
+  cnnGroup.select('g.input-annotation')
+    .interrupt()
+    .style('opacity', 0);
+
+  initializeManualLayerReveal(cnnGroup);
 }
 
 /**
@@ -1313,28 +2152,29 @@ export const updateCNNLayerRanges = () => {
     let aggregatedExtent = outputExtents.reduce((acc, cur) => {
       return [Math.min(acc[0], cur[0]), Math.max(acc[1], cur[1])];
     })
-    cnnLayerMinMax.push({min: aggregatedExtent[0], max: aggregatedExtent[1]});
+    cnnLayerMinMax.push({ min: aggregatedExtent[0], max: aggregatedExtent[1] });
 
     // conv layer refreshes curRange counting
     if (curLayer[0].type === 'conv' || curLayer[0].type === 'fc') {
       aggregatedExtent = aggregatedExtent.map(Math.abs);
       // Plus 0.1 to offset the rounding error (avoid black color)
-      curRange = 2 * (0.1 + 
+      curRange = 2 * (0.1 +
         Math.round(Math.max(...aggregatedExtent) * 1000) / 1000);
     }
 
-    if (curRange !== undefined){
+    if (curRange !== undefined) {
       cnnLayerRangesLocal.push(curRange);
     }
   }
 
   // Finally, add the output layer range
   cnnLayerRangesLocal.push(1);
-  cnnLayerMinMax.push({min: 0, max: 1});
+  cnnLayerMinMax.push({ min: 0, max: 1 });
 
   // Support different levels of scales (1) lcoal, (2) component, (3) global
+  let visibleLayerCount = cnn.length || numLayers;
   let cnnLayerRangesComponent = [1];
-  let numOfComponent = (numLayers - 2) / 5;
+  let numOfComponent = Math.max(1, Math.ceil((visibleLayerCount - 2) / 5));
   for (let i = 0; i < numOfComponent; i++) {
     let curArray = cnnLayerRangesLocal.slice(1 + 5 * i, 1 + 5 * i + 5);
     let maxRange = Math.max(...curArray);
@@ -1347,7 +2187,7 @@ export const updateCNNLayerRanges = () => {
   let cnnLayerRangesGlobal = [1];
   let maxRange = Math.max(...cnnLayerRangesLocal.slice(1,
     cnnLayerRangesLocal.length - 1));
-  for (let i = 0; i < numLayers - 2; i++) {
+  for (let i = 0; i < visibleLayerCount - 2; i++) {
     cnnLayerRangesGlobal.push(maxRange);
   }
   cnnLayerRangesGlobal.push(1);

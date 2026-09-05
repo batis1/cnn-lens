@@ -108,12 +108,15 @@ export const getLinkData = (nodeCoordinate, cnn) => {
         let inputNodeIndex = cnn[l][n].inputLinks[p].source.index;
         
         if (isOutput) {
-          let flattenDimension = cnn[l-1][0].output.length *
-            cnn[l-1][0].output.length;
-          if (inputNodeIndex % flattenDimension !== 0){
-              continue;
+          if (cnn[l][n].inputLinks[p].isOverviewSynthetic !== true &&
+            inputNodeIndex >= cnn[l - 1].length) {
+            let flattenDimension = cnn[l-1][0].output.length *
+              cnn[l-1][0].output.length;
+            if (inputNodeIndex % flattenDimension !== 0){
+                continue;
+            }
+            inputNodeIndex = Math.floor(inputNodeIndex / flattenDimension);
           }
-          inputNodeIndex = Math.floor(inputNodeIndex / flattenDimension);
         }
         let curSource = getOutputKnot(nodeCoordinate[l-1][inputNodeIndex]);
         let curWeight = cnn[l][n].inputLinks[p].weight;

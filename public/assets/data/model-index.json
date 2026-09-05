@@ -1,0 +1,17 @@
+[
+  {
+    "id": "compact-7",
+    "label": "7-layer",
+    "modelPath": "assets/data/models/compact-7/model.json"
+  },
+  {
+    "id": "balanced-12",
+    "label": "12-layer",
+    "modelPath": "assets/data/models/balanced-12/model.json"
+  },
+  {
+    "id": "deep-17",
+    "label": "17-layer",
+    "modelPath": "assets/data/models/deep-17/model.json"
+  }
+]

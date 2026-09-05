@@ -1,0 +1,138 @@
+@apiBase = http://127.0.0.1:8000/api
+
+### Health check
+GET {{apiBase}}/health
+
+### List registered PyTorch models
+# Backend currently registers 8 models:
+# cnn-mynet28, cnn-net-28-ori, cnn-net-28-pru1, cnn-net-28-pru2,
+# mlp-mynet28, tiny-vgg-7-pytorch, tiny-vgg-12-pytorch, tiny-vgg-17-pytorch.
+GET {{apiBase}}/models
+
+### Get CNN MyNet28 model
+GET {{apiBase}}/models/cnn-mynet28
+
+### Get CNN NET 28 original model
+GET {{apiBase}}/models/cnn-net-28-ori
+
+### Get CNN NET 28 pruned 1 model
+GET {{apiBase}}/models/cnn-net-28-pru1
+
+### Get CNN NET 28 pruned 2 model
+GET {{apiBase}}/models/cnn-net-28-pru2
+
+### Get MLP MyNet28 model
+GET {{apiBase}}/models/mlp-mynet28
+
+### Get 7-layer PyTorch TinyVGG model
+GET {{apiBase}}/models/tiny-vgg-7-pytorch
+
+### Get 12-layer PyTorch TinyVGG model
+GET {{apiBase}}/models/tiny-vgg-12-pytorch
+
+### Get 17-layer PyTorch TinyVGG model
+GET {{apiBase}}/models/tiny-vgg-17-pytorch
+
+### Serve one AI_Test_UI sample image
+GET {{apiBase}}/image?path=test_original/1_7.jpg
+
+### Explain CNN MyNet28
+POST {{apiBase}}/explain
+Content-Type: application/json
+
+{
+  "modelId": "cnn-mynet28",
+  "imagePath": "test_original/1_7.jpg"
+}
+
+### Explain CNN NET 28 original
+POST {{apiBase}}/explain
+Content-Type: application/json
+
+{
+  "modelId": "cnn-net-28-ori",
+  "imagePath": "test_original/1_7.jpg"
+}
+
+### Explain pruned model 1
+POST {{apiBase}}/explain
+Content-Type: application/json
+
+{
+  "modelId": "cnn-net-28-pru1",
+  "imagePath": "test_original/11_0.jpg"
+}
+
+### Explain pruned model 2
+POST {{apiBase}}/explain
+Content-Type: application/json
+
+{
+  "modelId": "cnn-net-28-pru2",
+  "imagePath": "test_original/100_9.jpg"
+}
+
+### MLP MyNet28 registry check only
+# This model is registered for AI_Test_UI coverage parity, but
+# supportedForExplanation=false, so /api/explain should reject it.
+GET {{apiBase}}/models/mlp-mynet28
+
+### Explain PyTorch equivalent of the 7-layer TensorFlow.js TinyVGG model
+POST {{apiBase}}/explain
+Content-Type: application/json
+
+{
+  "modelId": "tiny-vgg-7-pytorch",
+  "imagePath": "assets/img/boat_1.jpeg"
+}
+
+### Explain PyTorch equivalent of the 12-layer TensorFlow.js TinyVGG model
+POST {{apiBase}}/explain
+Content-Type: application/json
+
+{
+  "modelId": "tiny-vgg-12-pytorch",
+  "imagePath": "assets/img/koala_1.jpeg"
+}
+
+### Explain PyTorch equivalent of the 17-layer TensorFlow.js TinyVGG model
+POST {{apiBase}}/explain
+Content-Type: application/json
+
+{
+  "modelId": "tiny-vgg-17-pytorch",
+  "imagePath": "assets/img/pizza_1.jpeg"
+}
+
+### Test accuracy with PyTorch backend
+POST {{apiBase}}/test
+Content-Type: application/json
+
+{
+  "modelId": "cnn-net-28-ori",
+  "testDataPath": "accuracy",
+  "testType": "accuracy",
+  "limit": 25
+}
+
+### Test robustness with PyTorch backend
+POST {{apiBase}}/test
+Content-Type: application/json
+
+{
+  "modelId": "cnn-net-28-ori",
+  "testDataPath": "robustness",
+  "testType": "robustness",
+  "limit": 10
+}
+
+### Test adversary with PyTorch backend
+POST {{apiBase}}/test
+Content-Type: application/json
+
+{
+  "modelId": "cnn-net-28-ori",
+  "testDataPath": "adversary",
+  "testType": "adversary",
+  "limit": 10
+}

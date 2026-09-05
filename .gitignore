@@ -11,3 +11,14 @@ dist/
 local-build/
 tiny-vgg/data/
 pnpm-lock.yaml
+__pycache__/
+*.pyc
+.venv/
+backend/.venv/
+backend/outputs/
+backend/uploads/
+backend/data/generated/
+.playwright-cli/
+_minted/
+output/
+backend/*.log

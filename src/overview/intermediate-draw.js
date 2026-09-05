@@ -4,7 +4,8 @@ import {
   svgStore, vSpaceAroundGapStore, hSpaceAroundGapStore, cnnStore,
   nodeCoordinateStore, selectedScaleLevelStore, cnnLayerRangesStore,
   needRedrawStore, cnnLayerMinMaxStore, shouldIntermediateAnimateStore,
-  hoverInfoStore, detailedModeStore, intermediateLayerPositionStore
+  hoverInfoStore, detailedModeStore, intermediateLayerPositionStore,
+  manualLayerRevealStore
 } from '../stores.js';
 import {
   getExtent, getOutputKnot, getInputKnot, gappedColorScale
@@ -34,31 +35,31 @@ let isEndOfAnimation = false;
 
 // Shared variables
 let svg = undefined;
-svgStore.subscribe( value => {svg = value;} )
+svgStore.subscribe(value => { svg = value; })
 
 let vSpaceAroundGap = undefined;
-vSpaceAroundGapStore.subscribe( value => {vSpaceAroundGap = value;} )
+vSpaceAroundGapStore.subscribe(value => { vSpaceAroundGap = value; })
 
 let hSpaceAroundGap = undefined;
-hSpaceAroundGapStore.subscribe( value => {hSpaceAroundGap = value;} )
+hSpaceAroundGapStore.subscribe(value => { hSpaceAroundGap = value; })
 
 let cnn = undefined;
-cnnStore.subscribe( value => {cnn = value;} )
+cnnStore.subscribe(value => { cnn = value; })
 
 let nodeCoordinate = undefined;
-nodeCoordinateStore.subscribe( value => {nodeCoordinate = value;} )
+nodeCoordinateStore.subscribe(value => { nodeCoordinate = value; })
 
 let selectedScaleLevel = undefined;
-selectedScaleLevelStore.subscribe( value => {selectedScaleLevel = value;} )
+selectedScaleLevelStore.subscribe(value => { selectedScaleLevel = value; })
 
 let cnnLayerRanges = undefined;
-cnnLayerRangesStore.subscribe( value => {cnnLayerRanges = value;} )
+cnnLayerRangesStore.subscribe(value => { cnnLayerRanges = value; })
 
 let cnnLayerMinMax = undefined;
-cnnLayerMinMaxStore.subscribe( value => {cnnLayerMinMax = value;} )
+cnnLayerMinMaxStore.subscribe(value => { cnnLayerMinMax = value; })
 
 let needRedraw = [undefined, undefined];
-needRedrawStore.subscribe( value => {needRedraw = value;} )
+needRedrawStore.subscribe(value => { needRedraw = value; })
 
 let shouldIntermediateAnimate = undefined;
 shouldIntermediateAnimateStore.subscribe(value => {
@@ -66,12 +67,30 @@ shouldIntermediateAnimateStore.subscribe(value => {
 })
 
 let detailedMode = undefined;
-detailedModeStore.subscribe( value => {detailedMode = value;} )
+detailedModeStore.subscribe(value => { detailedMode = value; })
 
 let intermediateLayerPosition = undefined;
-intermediateLayerPositionStore.subscribe ( value => {intermediateLayerPosition = value;} )
+intermediateLayerPositionStore.subscribe(value => { intermediateLayerPosition = value; })
+
+let manualRevealInfo = { hasMore: false, nextLabel: '', progressText: '' };
+manualLayerRevealStore.subscribe(value => { manualRevealInfo = value; })
 
 // let curRightX = 0;
+
+const getRevealedLayerCount = () => {
+  let progress = manualRevealInfo?.progressText || '';
+  let shownCount = Number((progress.split('/')[0] || '').trim());
+  return Number.isFinite(shownCount) ? shownCount : cnn.length;
+}
+
+const getCompactRevealGap = (availableWidth, layerCount) => {
+  if (layerCount <= 1) {
+    return 0;
+  }
+
+  let rawGap = (availableWidth - layerCount * nodeLength) / (layerCount - 1);
+  return Math.max(18, Math.min(56, rawGap));
+}
 
 /**
  * Draw the intermediate layer activation heatmaps
@@ -94,7 +113,7 @@ const drawIntermidiateImage = (image, range, colorScale, length,
   let imageSingle = bufferContext.getImageData(0, 0, imageLength, imageLength);
   let imageSingleArray = imageSingle.data;
 
-  for (let i = 0; i < imageSingleArray.length; i+=4) {
+  for (let i = 0; i < imageSingleArray.length; i += 4) {
     let pixeIndex = Math.floor(i / 4);
     let row = Math.floor(pixeIndex / imageLength);
     let column = pixeIndex % imageLength;
@@ -118,7 +137,7 @@ const drawIntermidiateImage = (image, range, colorScale, length,
   bufferContext.putImageData(imageSingle, 0, 0);
   largeCanvasContext.drawImage(bufferCanvas, 0, 0, imageLength, imageLength,
     0, 0, nodeLength * 3, nodeLength * 3);
-  
+
   let imageDataURL = largeCanvas.toDataURL();
   image.attr('xlink:href', imageDataURL);
 
@@ -146,14 +165,14 @@ const createIntermediateNode = (curLayerIndex, selectedI, groupLayer, x, y,
   let newNode = groupLayer.append('g')
     .datum(cnn[curLayerIndex - 1][nodeIndex])
     .attr('class', 'intermediate-node')
-    .attr('cursor', interaction ? 'pointer': 'default')
-    .attr('pointer-events', interaction ? 'all': 'none')
+    .attr('cursor', interaction ? 'pointer' : 'default')
+    .attr('pointer-events', interaction ? 'all' : 'none')
     .attr('node-index', nodeIndex)
     .on('mouseover', intermediateNodeMouseOverHandler)
     .on('mouseleave', intermediateNodeMouseLeaveHandler)
     .on('click', (d, g, i) => intermediateNodeClicked(d, g, i, selectedI,
       curLayerIndex));
-  
+
   newNode.append('image')
     .attr('width', nodeLength)
     .attr('height', nodeLength)
@@ -165,7 +184,7 @@ const createIntermediateNode = (curLayerIndex, selectedI, groupLayer, x, y,
   let overlayGroup = newNode.append('g')
     .attr('class', 'overlay-group')
     .attr('transform', `translate(${x}, ${y})`);
-  
+
   for (let i = 0; i < strideTime; i++) {
     for (let j = 0; j < strideTime; j++) {
       overlayGroup.append('rect')
@@ -190,7 +209,7 @@ const createIntermediateNode = (curLayerIndex, selectedI, groupLayer, x, y,
     .style('fill', 'none')
     .style('stroke', intermediateColor)
     .style('stroke-width', 1);
-  
+
   return newNode;
 }
 
@@ -213,7 +232,7 @@ const startOutputAnimation = (kernelGroup, tickTime1D, stride, delay,
       .duration(300)
       .style('opacity', 0);
 
-      kernelGroup.attr('data-tick', newTick)
+    kernelGroup.attr('data-tick', newTick)
       .transition('window-sliding-input')
       .delay(delay)
       .duration(200)
@@ -298,10 +317,10 @@ const animationButtonClicked = (curLayerIndex) => {
   if (d3.event !== null) {
     d3.event.stopPropagation();
   }
-  
+
   let delay = 200;
   let tickTime1D = nodeLength / (kernelRectLength * 3);
-  let stride = kernelRectLength * 3; 
+  let stride = kernelRectLength * 3;
 
   if (isEndOfAnimation) {
     // Start the animation
@@ -320,7 +339,7 @@ const animationButtonClicked = (curLayerIndex) => {
       .style('opacity', 1);
 
     // Start the intermediate animation
-    for (let i  = 0; i < nodeCoordinate[curLayerIndex - 1].length; i++) {
+    for (let i = 0; i < nodeCoordinate[curLayerIndex - 1].length; i++) {
       startIntermediateAnimation(d3.select(`.kernel-input-${i}`),
         d3.select(`.kernel-result-${i}`), tickTime1D, stride);
     }
@@ -328,7 +347,7 @@ const animationButtonClicked = (curLayerIndex) => {
     // Start the output animation
     startOutputAnimation(d3.select('.kernel-output'),
       tickTime1D, stride, delay, curLayerIndex);
-    
+
     // Change the flow edge style
     svg.selectAll('path.flow-edge')
       .attr('stroke-dasharray', '4 2')
@@ -338,19 +357,19 @@ const animationButtonClicked = (curLayerIndex) => {
     // Change button icon
     svg.select('.animation-control-button')
       .attr('xlink:href', 'assets/img/fast_forward.svg');
-    
+
     isEndOfAnimation = false;
 
   } else {
     // End the animation
     shouldIntermediateAnimateStore.set(false);
-    
+
     // Show all intermediate and output results
     svg.selectAll(`rect.mask-overlay`)
       .transition('skip')
       .duration(600)
       .style('opacity', 0);
-    
+
     // Move kernel to the beginning to prepare for the next animation
     let kernelClones = svg.selectAll('.kernel-clone');
     kernelClones.attr('data-tick', 0)
@@ -363,16 +382,16 @@ const animationButtonClicked = (curLayerIndex) => {
         let originY = +element.attr('data-origin-y');
         element.attr('transform', `translate(${originX}, ${originY})`);
       });
-    
+
     // Change flow edge style
     svg.selectAll('path.flow-edge')
       .interrupt()
       .attr('stroke-dasharray', '0 0');
-    
+
     // Change button icon
     svg.select('.animation-control-button')
       .attr('xlink:href', 'assets/img/redo.svg');
-    
+
     isEndOfAnimation = true;
   }
 }
@@ -406,17 +425,17 @@ const animateEdge = (d, i, g, dashoffset) => {
 const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
   intermediateGap, d, i, intermediateNodeMouseOverHandler,
   intermediateNodeMouseLeaveHandler, intermediateNodeClicked) => {
-  
+
   // curRightX = rightStart;
 
   // Add the intermediate layer
   let intermediateLayer = svg.append('g')
     .attr('class', 'intermediate-layer')
     .style('opacity', 1);
-  
+
   // Recovert the animation counter
   isEndOfAnimation = false;
-  
+
   // Tried to add a rectangle to block the intermediate because of webkit's
   // horrible support (decade old bug) for foreignObject. It doesnt work either.
   // https://bugs.webkit.org/show_bug.cgi?id=23113
@@ -431,7 +450,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
   let range = cnnLayerRanges[selectedScaleLevel][curLayerIndex];
   let colorScale = layerColorScales[d.type];
   let intermediateMinMax = [];
-  
+
   // Copy the previsious layer to construct foreignObject placeholder
   // Also add edges from/to the intermediate layer in this loop
   let linkData = [];
@@ -450,7 +469,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
   let kernelColorGap = 0.2;
 
   // Compute stride for the kernel animation
-  let stride = kernelRectLength * 3; 
+  let stride = kernelRectLength * 3;
 
   // Also add the overlay mask on the output node
   let outputY = nodeCoordinate[curLayerIndex][i].y;
@@ -460,7 +479,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
     .attr('transform', `translate(${rightX}, ${outputY})`);
 
   let strideTime = Math.floor(nodeLength / stride);
-  
+
   for (let i = 0; i < strideTime; i++) {
     for (let j = 0; j < strideTime; j++) {
       outputOverlayGroup.append('rect')
@@ -490,7 +509,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
     .attr('height', kernelRectLength * 3)
     .attr('fill', 'none')
     .attr('stroke', intermediateColor);
-  
+
   kernelGroup.attr('data-tick', 0)
     .attr('data-origin-x', rightX)
     .attr('data-origin-y', outputY);
@@ -525,24 +544,26 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
     let newNode = createIntermediateNode(curLayerIndex, i, intermediateLayer,
       intermediateX1, sourceCoords.y, ni, stride, intermediateNodeMouseOverHandler,
       intermediateNodeMouseLeaveHandler, intermediateNodeClicked, true);
-    
+
     // Draw the image
     let image = newNode.select('image');
     drawIntermidiateImage(image, range, colorScale, d.output.length,
-      interMatrix);      
+      interMatrix);
 
     // Edge: input -> intermediate1
     linkData.push({
-      source: getOutputKnot({x: leftX, y: sourceCoords.y}),
-      target: getInputKnot({x: intermediateX1, y: sourceCoords.y}),
+      source: getOutputKnot({ x: leftX, y: sourceCoords.y }),
+      target: getInputKnot({ x: intermediateX1, y: sourceCoords.y }),
       name: `input-${ni}-inter1-${ni}`
     });
 
     // Edge: intermediate1 -> intermediate2-1
     linkData.push({
-      source: getOutputKnot({x: intermediateX1, y: sourceCoords.y}),
-      target: getInputKnot({x: intermediateX2,
-        y: nodeCoordinate[curLayerIndex][i].y}),
+      source: getOutputKnot({ x: intermediateX1, y: sourceCoords.y }),
+      target: getInputKnot({
+        x: intermediateX2,
+        y: nodeCoordinate[curLayerIndex][i].y
+      }),
       name: `inter1-${ni}-inter2-1`
     });
 
@@ -583,16 +604,16 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
       .attr('height', kernelRectLength * 3)
       .attr('fill', 'none')
       .attr('stroke', intermediateColor);
-    
+
     kernelGroup.style('pointer-events', 'all')
       .style('cursor', 'crosshair')
       .on('mouseover', () => {
-        hoverInfoStore.set( {show: true, text: weightText} );
+        hoverInfoStore.set({ show: true, text: weightText });
       })
       .on('mouseleave', () => {
-        hoverInfoStore.set( {show: false, text: weightText} );
+        hoverInfoStore.set({ show: false, text: weightText });
       })
-      .on('click', () => {d3.event.stopPropagation()});
+      .on('click', () => { d3.event.stopPropagation() });
 
     // Sliding the kernel on the input channel and result channel at the same
     // time
@@ -625,7 +646,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
       `translate(${intermediateX1}, ${sourceCoords.y})`)
       .attr('data-origin-x', intermediateX1)
       .attr('data-origin-y', sourceCoords.y);
-    
+
     startIntermediateAnimation(kernelGroupInput, kernelGroupResult, tickTime1D,
       stride);
   });
@@ -634,7 +655,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
   let aggregatedExtent = intermediateMinMax.reduce((acc, cur) => {
     return [Math.min(acc[0], cur[0]), Math.max(acc[1], cur[1])];
   })
-  let aggregatedMinMax = {min: aggregatedExtent[0], max: aggregatedExtent[1]};
+  let aggregatedMinMax = { min: aggregatedExtent[0], max: aggregatedExtent[1] };
 
   // Draw the plus operation symbol
   let symbolY = nodeCoordinate[curLayerIndex][i].y + nodeLength / 2;
@@ -642,7 +663,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
   let symbolGroup = intermediateLayer.append('g')
     .attr('class', 'plus-symbol')
     .attr('transform', `translate(${intermediateX2 + plusSymbolRadius}, ${symbolY})`);
-  
+
   symbolGroup.append('rect')
     .attr('x', -plusSymbolRadius)
     .attr('y', -plusSymbolRadius)
@@ -652,7 +673,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
     .attr('ry', 3)
     .style('fill', 'none')
     .style('stroke', intermediateColor);
-  
+
   symbolGroup.append('rect')
     .attr('x', -(plusSymbolRadius - 3))
     .attr('y', -symbolRectHeight / 2)
@@ -672,26 +693,30 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
   if (i == 0) {
     // Add bias symbol to the plus symbol
     symbolGroup.append('circle')
-        .attr('cx', 0)
-        .attr('cy', nodeLength / 2 + kernelRectLength)
-        .attr('r', 4)
-        .style('stroke', intermediateColor)
-        .style('cursor', 'crosshair')
-        .style('fill', gappedColorScale(layerColorScales.weight, kernelRange,
-          d.bias, kernelColorGap))
-        .on('mouseover', () => {
-          hoverInfoStore.set( {show: true, text: `Bias: ${formater(d.bias)}`} );
-        })
-        .on('mouseleave', () => {
-          hoverInfoStore.set( {show: false, text: `Bias: ${formater(d.bias)}`} );
-        });
+      .attr('cx', 0)
+      .attr('cy', nodeLength / 2 + kernelRectLength)
+      .attr('r', 4)
+      .style('stroke', intermediateColor)
+      .style('cursor', 'crosshair')
+      .style('fill', gappedColorScale(layerColorScales.weight, kernelRange,
+        d.bias, kernelColorGap))
+      .on('mouseover', () => {
+        hoverInfoStore.set({ show: true, text: `Bias: ${formater(d.bias)}` });
+      })
+      .on('mouseleave', () => {
+        hoverInfoStore.set({ show: false, text: `Bias: ${formater(d.bias)}` });
+      });
 
     // Link from bias to the plus symbol
     linkData.push({
-      source: {x: intermediateX2 + plusSymbolRadius,
-        y: nodeCoordinate[curLayerIndex][i].y + nodeLength},
-      target: {x: intermediateX2 + plusSymbolRadius,
-        y: nodeCoordinate[curLayerIndex][i].y + nodeLength / 2 + plusSymbolRadius},
+      source: {
+        x: intermediateX2 + plusSymbolRadius,
+        y: nodeCoordinate[curLayerIndex][i].y + nodeLength
+      },
+      target: {
+        x: intermediateX2 + plusSymbolRadius,
+        y: nodeCoordinate[curLayerIndex][i].y + nodeLength / 2 + plusSymbolRadius
+      },
       name: `bias-plus`
     });
   } else {
@@ -705,39 +730,54 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
       .style('fill', gappedColorScale(layerColorScales.weight, kernelRange,
         d.bias, kernelColorGap))
       .on('mouseover', () => {
-        hoverInfoStore.set( {show: true, text: `Bias: ${formater(d.bias)}`} );
+        hoverInfoStore.set({ show: true, text: `Bias: ${formater(d.bias)}` });
       })
       .on('mouseleave', () => {
-        hoverInfoStore.set( {show: false, text: `Bias: ${formater(d.bias)}`} );
+        hoverInfoStore.set({ show: false, text: `Bias: ${formater(d.bias)}` });
       });
-    
+
     // Link from bias to the plus symbol
     linkData.push({
-      source: {x: intermediateX2 + plusSymbolRadius,
-        y: nodeCoordinate[curLayerIndex][i].y},
-      target: {x: intermediateX2 + plusSymbolRadius,
-        y: nodeCoordinate[curLayerIndex][i].y + nodeLength / 2 - plusSymbolRadius},
+      source: {
+        x: intermediateX2 + plusSymbolRadius,
+        y: nodeCoordinate[curLayerIndex][i].y
+      },
+      target: {
+        x: intermediateX2 + plusSymbolRadius,
+        y: nodeCoordinate[curLayerIndex][i].y + nodeLength / 2 - plusSymbolRadius
+      },
       name: `bias-plus`
     });
   }
 
   // Link from the plus symbol to the output
   linkData.push({
-    source: getOutputKnot({x: intermediateX2 + 2 * plusSymbolRadius - nodeLength,
-      y: nodeCoordinate[curLayerIndex][i].y}),
-    target: getInputKnot({x: rightX,
-      y: nodeCoordinate[curLayerIndex][i].y}),
+    source: getOutputKnot({
+      x: intermediateX2 + 2 * plusSymbolRadius - nodeLength,
+      y: nodeCoordinate[curLayerIndex][i].y
+    }),
+    target: getInputKnot({
+      x: rightX,
+      y: nodeCoordinate[curLayerIndex][i].y
+    }),
     name: `symbol-output`
   });
-  
+
   // Output -> next layer
-  linkData.push({
-    source: getOutputKnot({x: rightX,
-      y: nodeCoordinate[curLayerIndex][i].y}),
-    target: getInputKnot({x: rightStart,
-      y: nodeCoordinate[curLayerIndex][i].y}),
-    name: `output-next`
-  });
+  let revealedLayerCount = getRevealedLayerCount();
+  if (curLayerIndex + 1 < revealedLayerCount) {
+    linkData.push({
+      source: getOutputKnot({
+        x: rightX,
+        y: nodeCoordinate[curLayerIndex][i].y
+      }),
+      target: getInputKnot({
+        x: rightStart,
+        y: nodeCoordinate[curLayerIndex][i].y
+      }),
+      name: `output-next`
+    });
+  }
 
   // Draw the layer label
   intermediateLayer.append('g')
@@ -754,7 +794,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
     .style('font-weight', 800)
     .style('opacity', '0.8')
     .text('intermediate');
-  
+
   intermediateLayer.append('g')
     .attr('class', 'animation-control')
     .attr('transform', () => {
@@ -800,10 +840,10 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
   let linkGen = d3.linkHorizontal()
     .x(d => d.x)
     .y(d => d.y);
-  
+
   let edgeGroup = intermediateLayer.append('g')
     .attr('class', 'edge-group');
-  
+
   let dashoffset = 0;
 
   edgeGroup.selectAll('path')
@@ -812,7 +852,7 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
     .append('path')
     .classed('flow-edge', d => d.name !== 'output-next')
     .attr('id', d => `edge-${d.name}`)
-    .attr('d', d => linkGen({source: d.source, target: d.target}))
+    .attr('d', d => linkGen({ source: d.source, target: d.target }))
     .style('fill', 'none')
     .style('stroke-width', 1)
     .style('opacity', 0.75)
@@ -820,16 +860,18 @@ const drawIntermediateLayer = (curLayerIndex, leftX, rightX, rightStart,
 
   edgeGroup.select('#edge-output-next')
     .style('opacity', 0.35);
-  
+
   edgeGroup.selectAll('path.flow-edge')
     .attr('stroke-dasharray', '4 2')
     .attr('stroke-dashoffset', 0)
     .each((d, i, g) => animateEdge(d, i, g, dashoffset - 1000));
-  
-  return {intermediateLayer: intermediateLayer,
+
+  return {
+    intermediateLayer: intermediateLayer,
     intermediateMinMax: aggregatedMinMax,
     kernelRange: kernelRange,
-    kernelMinMax: {min: kernelExtent[0], max: kernelExtent[1]}};
+    kernelMinMax: { min: kernelExtent[0], max: kernelExtent[1] }
+  };
 }
 
 /**
@@ -853,7 +895,7 @@ const drawIntermediateLayerAnnotation = (arg) => {
 
   let kernelAnnotation = group.append('g')
     .attr('class', 'kernel-annotation');
-  
+
   kernelAnnotation.append('text')
     .text('Kernel')
     .attr('class', 'annotation-text')
@@ -864,7 +906,7 @@ const drawIntermediateLayerAnnotation = (arg) => {
 
   let sliderX, sliderY, arrowSX, arrowSY, dr;
   let sliderX2, sliderY2, arrowSX2, arrowSY2, dr2, arrowTX2, arrowTY2;
-  
+
   if (isFirstConv) {
     sliderX = leftX;
     sliderY = nodeCoordinate[curLayerIndex - 1][0].y + nodeLength +
@@ -875,12 +917,12 @@ const drawIntermediateLayerAnnotation = (arg) => {
     dr = 20;
 
     sliderX2 = leftX;
-      sliderY2 = nodeCoordinate[curLayerIndex - 1][1].y + nodeLength +
-    kernelRectLength * 3;
+    sliderY2 = nodeCoordinate[curLayerIndex - 1][1].y + nodeLength +
+      kernelRectLength * 3;
     arrowSX2 = leftX - kernelRectLength * 3;
     arrowSY2 = nodeCoordinate[curLayerIndex - 1][1].y + nodeLength + 15;
     arrowTX2 = leftX - 13;
-    arrowTY2 =  nodeCoordinate[curLayerIndex - 1][1].y + 15;
+    arrowTY2 = nodeCoordinate[curLayerIndex - 1][1].y + 15;
     dr2 = 35;
   } else {
     sliderX = leftX - 3 * kernelRectLength * 3;
@@ -904,7 +946,7 @@ const drawIntermediateLayerAnnotation = (arg) => {
     .attr('class', 'annotation-text')
     .style('dominant-baseline', 'hanging')
     .style('text-anchor', isFirstConv ? 'start' : 'end');
-  
+
   slideText.append('tspan')
     .style('dominant-baseline', 'hanging')
     .text('Slide kernel over input channel');
@@ -927,7 +969,7 @@ const drawIntermediateLayerAnnotation = (arg) => {
     .style('dominant-baseline', 'hanging')
     .style('font-weight', 700)
     .text('Click ');
-  
+
   slideText.append('tspan')
     .style('dominant-baseline', 'hanging')
     .style('font-weight', 400)
@@ -989,12 +1031,12 @@ const drawIntermediateLayerAnnotation = (arg) => {
   // Add annotation for the sum operation
   let plusAnnotation = group.append('g')
     .attr('class', 'plus-annotation');
-  
+
   let intermediateX2 = leftX + 2 * nodeLength + 2.5 * intermediateGap;
   let textX = intermediateX2;
   let textY = nodeCoordinate[curLayerIndex][i].y + nodeLength +
-      kernelRectLength * 3;
-  
+    kernelRectLength * 3;
+
   // Special case 1: first node
   if (i === 0) { textX += 30; }
 
@@ -1010,17 +1052,17 @@ const drawIntermediateLayerAnnotation = (arg) => {
     .attr('class', 'annotation-text')
     .style('dominant-baseline', 'hanging')
     .style('text-anchor', 'start');
-  
+
   plusText.append('tspan')
     .style('dominant-baseline', 'hanging')
     .text('Add up all intermediate');
-  
+
   plusText.append('tspan')
     .attr('x', textX)
     .attr('dy', '1em')
     .style('dominant-baseline', 'hanging')
     .text('results and then add bias');
-  
+
   if (i === 9) {
     drawArrow({
       group: group,
@@ -1089,7 +1131,7 @@ const addUnderneathRect = (curLayerIndex, i, leftX,
       .attr('rx', 10)
       .style('fill', 'rgba(160, 160, 160, 0.2)')
       .style('opacity', 0);
-    
+
     // Register new events for input layer nodes
     svg.select(`g#layer-${curLayerIndex - 1}-node-${n}`)
       .style('pointer-events', 'all')
@@ -1098,7 +1140,7 @@ const addUnderneathRect = (curLayerIndex, i, leftX,
       .on('mouseleave', intermediateNodeMouseLeaveHandler)
       .on('click', (d, ni, g) => intermediateNodeClicked(d, ni, g,
         i, curLayerIndex));
-      // .on('click', (d, i) => {console.log(i)});
+    // .on('click', (d, i) => {console.log(i)});
   }
   underGroup.lower();
 }
@@ -1127,7 +1169,7 @@ export const addOverlayRect = (gradientName, x, y, width, height) => {
     .attr('x', x)
     .attr('y', y)
     .style('opacity', 0);
-  
+
   overlayRect.transition('move')
     .duration(800)
     .ease(d3.easeCubicInOut)
@@ -1152,12 +1194,12 @@ const redrawLayerIfNeeded = (curLayerIndex, i) => {
     svg.select(`g#layer-${curLayerIndex}-node-${i}`)
       .select('image.node-image')
       .each((d, g, i) => drawOutput(d, g, i, range));
-    
+
     // Record the change so we will re-redraw the layer when user quits
     // the intermediate view
     needRedraw = [curLayerIndex, i];
     needRedrawStore.set(needRedraw);
-    
+
   } else if (rangePre < rangeCur) {
     // Redraw the previous layer (whole layer)
     svg.select(`g#cnn-layer-group-${curLayerIndex - 1}`)
@@ -1184,7 +1226,7 @@ const redrawLayerIfNeeded = (curLayerIndex, i) => {
     }
   }
 
-  return {range: range, minMax: {min: min, max: max}};
+  return { range: range, minMax: { min: min, max: max } };
 }
 
 /**
@@ -1201,11 +1243,16 @@ const redrawLayerIfNeeded = (curLayerIndex, i) => {
 export const drawConv1 = (curLayerIndex, d, i, width, height,
   intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
   intermediateNodeClicked) => {
-  // Compute the target location
-  let targetX = nodeCoordinate[curLayerIndex - 1][0].x + 2 * nodeLength +
-    2 * hSpaceAroundGap * gapRatio + plusSymbolRadius * 2;
-  let intermediateGap = (hSpaceAroundGap * gapRatio * 2) / 3;
+  svg.select('.input-annotation')
+    .interrupt()
+    .classed('hidden', true)
+    .style('opacity', 0);
+
   let leftX = nodeCoordinate[curLayerIndex - 1][0].x;
+  let detailGap = Math.min(hSpaceAroundGap, 70);
+  let targetX = nodeCoordinate[curLayerIndex - 1][0].x + 2 * nodeLength +
+    2 * detailGap * gapRatio + plusSymbolRadius * 2;
+  let intermediateGap = (detailGap * gapRatio * 2) / 3;
 
   // Record the left x position for dynamic detial view positioning
   intermediateLayerPosition['conv_1_1'] = targetX + nodeLength;
@@ -1216,34 +1263,38 @@ export const drawConv1 = (curLayerIndex, d, i, width, height,
     .style('visibility', 'hidden');
 
   // Move the selected layer
-  moveLayerX({layerIndex: curLayerIndex, targetX: targetX, disable: true,
-    delay: 0, opacity: 0.15, specialIndex: i});
+  moveLayerX({
+    layerIndex: curLayerIndex, targetX: targetX, disable: true,
+    delay: 0, opacity: 0.15, specialIndex: i
+  });
 
   // Compute the gap in the right shrink region
-  let rightStart = targetX + nodeLength + hSpaceAroundGap * gapRatio;
-  let rightGap = (width - rightStart - 10 * nodeLength) / 10;
+  let rightStart = targetX + nodeLength + detailGap * gapRatio;
+  let trailingLayerCount = Math.max(cnn.length - (curLayerIndex + 1), 0);
+  let trailingAvailableWidth = Math.max(width - rightStart, 0);
+  let rightGap = getCompactRevealGap(trailingAvailableWidth, trailingLayerCount);
 
   // Move the right layers
-  for (let i = curLayerIndex + 1; i < numLayers; i++) {
-    let curX = rightStart + (i - (curLayerIndex + 1)) * (nodeLength + rightGap);
-    moveLayerX({layerIndex: i, targetX: curX, disable: true, delay: 0});
+  for (let layerIndex = curLayerIndex + 1; layerIndex < cnn.length; layerIndex++) {
+    let curX = rightStart + (layerIndex - (curLayerIndex + 1)) * (nodeLength + rightGap);
+    moveLayerX({ layerIndex, targetX: curX, disable: true, delay: 0 });
   }
 
-  // Add an overlay gradient and rect
-  let stops = [{offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85},
-  {offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95},
-  {offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1}];
+  // Add an overlay gradient and rect for the right side while keeping the
+  // first-conv walkthrough compact.
+  let stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1 }];
   addOverlayGradient('overlay-gradient', stops);
-
-  addOverlayRect('overlay-gradient', rightStart - overlayRectOffset / 2,
-  0, width - rightStart + overlayRectOffset,
-  height + svgPaddings.top + svgPaddings.bottom);
+  addOverlayRect('overlay-gradient-right', rightStart - overlayRectOffset / 2,
+    0, width - rightStart + overlayRectOffset,
+    height + svgPaddings.top + svgPaddings.bottom);
 
   // Draw the intermediate layer
-  let {intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax} =
-  drawIntermediateLayer(curLayerIndex, leftX, targetX, rightStart,
-    intermediateGap, d, i, intermediateNodeMouseOverHandler,
-    intermediateNodeMouseLeaveHandler, intermediateNodeClicked);
+  let { intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax } =
+    drawIntermediateLayer(curLayerIndex, leftX, targetX, rightStart,
+      intermediateGap, d, i, intermediateNodeMouseOverHandler,
+      intermediateNodeMouseLeaveHandler, intermediateNodeClicked);
   addUnderneathRect(curLayerIndex, i, leftX, intermediateGap, 8,
     intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
     intermediateNodeClicked);
@@ -1253,21 +1304,21 @@ export const drawConv1 = (curLayerIndex, d, i, width, height,
   let min = Infinity, max = -Infinity;
   let n = cnn[curLayerIndex][i];
   for (let r = 0; r < n.output.length; r++) {
-  for (let c = 0; c < n.output[0].length; c++) {
-    if (n.output[r][c] < min) { min = n.output[r][c]; }
-    if (n.output[r][c] > max) { max = n.output[r][c]; }
-  }
+    for (let c = 0; c < n.output[0].length; c++) {
+      if (n.output[r][c] < min) { min = n.output[r][c]; }
+      if (n.output[r][c] > max) { max = n.output[r][c]; }
+    }
   }
 
   let finalMinMax = {
-  min: Math.min(min, intermediateMinMax.min),
-  max: Math.max(max, intermediateMinMax.max)
+    min: Math.min(min, intermediateMinMax.min),
+    max: Math.max(max, intermediateMinMax.max)
   }
 
   // Add annotation to the intermediate layer
   let intermediateLayerAnnotation = svg.append('g')
-  .attr('class', 'intermediate-layer-annotation')
-  .style('opacity', 1);
+    .attr('class', 'intermediate-layer-annotation')
+    .style('opacity', 1);
 
   drawIntermediateLayerAnnotation({
     leftX: leftX,
@@ -1291,7 +1342,7 @@ export const drawConv1 = (curLayerIndex, d, i, width, height,
     width: 2 * nodeLength + intermediateGap,
     isInput: true,
     x: leftX,
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10 - 25
   });
 
@@ -1303,7 +1354,7 @@ export const drawConv1 = (curLayerIndex, d, i, width, height,
     group: intermediateLayer,
     width: 2 * nodeLength + intermediateGap,
     x: nodeCoordinate[curLayerIndex - 1][2].x,
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10
   });
 
@@ -1315,7 +1366,7 @@ export const drawConv1 = (curLayerIndex, d, i, width, height,
     group: intermediateLayer,
     width: 2 * nodeLength + intermediateGap,
     x: targetX + nodeLength - (2 * nodeLength + intermediateGap),
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10,
     gradientAppendingName: 'kernelColorGradient',
     colorScale: layerColorScales.weight,
@@ -1341,46 +1392,51 @@ export const drawConv1 = (curLayerIndex, d, i, width, height,
 export const drawConv2 = (curLayerIndex, d, i, width, height,
   intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
   intermediateNodeClicked) => {
+  let detailGap = Math.min(hSpaceAroundGap, 70);
   let targetX = nodeCoordinate[curLayerIndex - 1][0].x + 2 * nodeLength +
-    2 * hSpaceAroundGap * gapRatio + plusSymbolRadius * 2;
-  let intermediateGap = (hSpaceAroundGap * gapRatio * 2) / 3;
+    2 * detailGap * gapRatio + plusSymbolRadius * 2;
+  let intermediateGap = (detailGap * gapRatio * 2) / 3;
 
   // Record the left x position for dynamic detial view positioning
   intermediateLayerPosition['conv_1_2'] = targetX + nodeLength;
   intermediateLayerPositionStore.set(intermediateLayerPosition);
 
   // Make sure two layers have the same range
-  let {range, minMax} = redrawLayerIfNeeded(curLayerIndex, i);
+  let { range, minMax } = redrawLayerIfNeeded(curLayerIndex, i);
 
   // Hide the edges
   svg.select('g.edge-group')
     .style('visibility', 'hidden');
 
   // Move the selected layer
-  moveLayerX({layerIndex: curLayerIndex, targetX: targetX, disable: true,
-    delay: 0, opacity: 0.15, specialIndex: i});
+  moveLayerX({
+    layerIndex: curLayerIndex, targetX: targetX, disable: true,
+    delay: 0, opacity: 0.15, specialIndex: i
+  });
 
   // Compute the gap in the right shrink region
-  let rightStart = targetX + nodeLength + hSpaceAroundGap * gapRatio;
-  let rightGap = (width - rightStart - 8 * nodeLength) / 8;
+  let rightStart = targetX + nodeLength + detailGap * gapRatio;
+  let trailingLayerCount = Math.max(cnn.length - (curLayerIndex + 1), 0);
+  let trailingAvailableWidth = Math.max(width - rightStart, 0);
+  let rightGap = getCompactRevealGap(trailingAvailableWidth, trailingLayerCount);
 
   // Move the right layers
-  for (let i = curLayerIndex + 1; i < numLayers; i++) {
+  for (let i = curLayerIndex + 1; i < cnn.length; i++) {
     let curX = rightStart + (i - (curLayerIndex + 1)) * (nodeLength + rightGap);
-    moveLayerX({layerIndex: i, targetX: curX, disable: true, delay: 0});
+    moveLayerX({ layerIndex: i, targetX: curX, disable: true, delay: 0 });
   }
 
   // Add an overlay
-  let stops = [{offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85},
-    {offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95},
-    {offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1}];
+  let stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1 }];
   addOverlayGradient('overlay-gradient-right', stops);
 
-  let leftRightRatio = (2 * nodeLength + hSpaceAroundGap * gapRatio) /
+  let leftRightRatio = (2 * nodeLength + detailGap * gapRatio) /
     (8 * nodeLength + intermediateGap * 7);
   let endingGradient = 0.85 + (0.95 - 0.85) * leftRightRatio;
-  stops = [{offset: '0%', color: 'rgb(250, 250, 250)', opacity: endingGradient},
-    {offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85}];
+  stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: endingGradient },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85 }];
   addOverlayGradient('overlay-gradient-left', stops);
 
   addOverlayRect('overlay-gradient-right', rightStart - overlayRectOffset / 2,
@@ -1388,12 +1444,12 @@ export const drawConv2 = (curLayerIndex, d, i, width, height,
     height + svgPaddings.top + svgPaddings.bottom);
 
   addOverlayRect('overlay-gradient-left', nodeCoordinate[0][0].x - overlayRectOffset / 2,
-    0, nodeLength * 2 + hSpaceAroundGap * gapRatio + overlayRectOffset,
+    0, nodeLength * 2 + detailGap * gapRatio + overlayRectOffset,
     height + svgPaddings.top + svgPaddings.bottom);
 
   // Draw the intermediate layer
   let leftX = nodeCoordinate[curLayerIndex - 1][0].x;
-  let {intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax} =
+  let { intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax } =
     drawIntermediateLayer(curLayerIndex, leftX, targetX, rightStart,
       intermediateGap, d, i, intermediateNodeMouseOverHandler,
       intermediateNodeMouseLeaveHandler, intermediateNodeClicked);
@@ -1432,7 +1488,7 @@ export const drawConv2 = (curLayerIndex, d, i, width, height,
     group: intermediateLayer,
     width: 2 * nodeLength + intermediateGap,
     x: leftX,
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10
   });
 
@@ -1444,7 +1500,7 @@ export const drawConv2 = (curLayerIndex, d, i, width, height,
     group: intermediateLayer,
     width: 2 * nodeLength + intermediateGap,
     x: targetX + nodeLength - (2 * nodeLength + intermediateGap),
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10,
     gradientAppendingName: 'kernelColorGradient',
     colorScale: layerColorScales.weight,
@@ -1485,49 +1541,55 @@ export const drawConv3 = (curLayerIndex, d, i, width, height,
     .style('visibility', 'hidden');
 
   // Make sure two layers have the same range
-  let {range, minMax} = redrawLayerIfNeeded(curLayerIndex, i);
+  let { range, minMax } = redrawLayerIfNeeded(curLayerIndex, i);
 
   // Move the previous layer
-  moveLayerX({layerIndex: curLayerIndex - 1, targetX: leftX,
-    disable: true, delay: 0});
+  moveLayerX({
+    layerIndex: curLayerIndex - 1, targetX: leftX,
+    disable: true, delay: 0
+  });
 
-  moveLayerX({layerIndex: curLayerIndex,
+  moveLayerX({
+    layerIndex: curLayerIndex,
     targetX: targetX, disable: true,
-    delay: 0, opacity: 0.15, specialIndex: i});
+    delay: 0, opacity: 0.15, specialIndex: i
+  });
 
   // Compute the gap in the left shrink region
   let leftEnd = leftX - hSpaceAroundGap;
-  let leftGap = (leftEnd - nodeCoordinate[0][0].x - 5 * nodeLength) / 5;
+  let leftLayerCount = Math.max(curLayerIndex - 1, 0);
+  let leftAvailableWidth = Math.max(leftEnd - nodeCoordinate[0][0].x, 0);
+  let leftGap = getCompactRevealGap(leftAvailableWidth, leftLayerCount);
   let rightStart = nodeCoordinate[curLayerIndex][0].x +
     nodeLength + hSpaceAroundGap;
 
   // Move the left layers
   for (let i = 0; i < curLayerIndex - 1; i++) {
     let curX = nodeCoordinate[0][0].x + i * (nodeLength + leftGap);
-    moveLayerX({layerIndex: i, targetX: curX, disable: true, delay: 0});
+    moveLayerX({ layerIndex: i, targetX: curX, disable: true, delay: 0 });
   }
 
   // Add an overlay
-  let stops = [{offset: '0%', color: 'rgb(250, 250, 250)', opacity: 1},
-    {offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.9},
-    {offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85}];
+  let stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 1 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.9 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85 }];
   addOverlayGradient('overlay-gradient-left', stops);
 
-  stops = [{offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85},
-    {offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95},
-    {offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1}];
+  stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1 }];
   addOverlayGradient('overlay-gradient-right', stops);
 
   addOverlayRect('overlay-gradient-left', nodeCoordinate[0][0].x - overlayRectOffset / 2,
     0, leftEnd - nodeCoordinate[0][0].x + overlayRectOffset,
     height + svgPaddings.top + svgPaddings.bottom);
-  
+
   addOverlayRect('overlay-gradient-right', rightStart - overlayRectOffset / 2,
     0, width - rightStart + overlayRectOffset,
     height + svgPaddings.top + svgPaddings.bottom);
-  
+
   // Draw the intermediate layer
-  let {intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax} =
+  let { intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax } =
     drawIntermediateLayer(curLayerIndex, leftX,
       nodeCoordinate[curLayerIndex][0].x, rightStart, intermediateGap,
       d, i, intermediateNodeMouseOverHandler,
@@ -1535,7 +1597,7 @@ export const drawConv3 = (curLayerIndex, d, i, width, height,
   addUnderneathRect(curLayerIndex, i, leftX, intermediateGap, 5,
     intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
     intermediateNodeClicked);
-          
+
   // After getting the intermediateMinMax, we can finally aggregate it with
   // the preLayer minmax, curLayer minmax
   let finalMinMax = {
@@ -1567,7 +1629,7 @@ export const drawConv3 = (curLayerIndex, d, i, width, height,
     width: 2 * nodeLength + intermediateGap,
     minMax: finalMinMax,
     x: leftX,
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10
   });
 
@@ -1579,7 +1641,7 @@ export const drawConv3 = (curLayerIndex, d, i, width, height,
     group: intermediateLayer,
     width: 2 * nodeLength + intermediateGap,
     x: targetX + nodeLength - (2 * nodeLength + intermediateGap),
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10,
     gradientAppendingName: 'kernelColorGradient',
     colorScale: layerColorScales.weight,
@@ -1619,48 +1681,54 @@ export const drawConv4 = (curLayerIndex, d, i, width, height,
     .style('visibility', 'hidden');
 
   // Make sure two layers have the same range
-  let {range, minMax} = redrawLayerIfNeeded(curLayerIndex, i);
+  let { range, minMax } = redrawLayerIfNeeded(curLayerIndex, i);
 
   // Move the previous layer
-  moveLayerX({layerIndex: curLayerIndex - 1, targetX: leftX,
-    disable: true, delay: 0});
+  moveLayerX({
+    layerIndex: curLayerIndex - 1, targetX: leftX,
+    disable: true, delay: 0
+  });
 
-  moveLayerX({layerIndex: curLayerIndex,
+  moveLayerX({
+    layerIndex: curLayerIndex,
     targetX: targetX, disable: true,
-    delay: 0, opacity: 0.15, specialIndex: i});
+    delay: 0, opacity: 0.15, specialIndex: i
+  });
 
   // Compute the gap in the left shrink region
   let leftEnd = leftX - hSpaceAroundGap;
-  let leftGap = (leftEnd - nodeCoordinate[0][0].x - 7 * nodeLength) / 7;
+  let leftLayerCount = Math.max(curLayerIndex - 1, 0);
+  let leftAvailableWidth = Math.max(leftEnd - nodeCoordinate[0][0].x, 0);
+  let leftGap = getCompactRevealGap(leftAvailableWidth, leftLayerCount);
   let rightStart = targetX + nodeLength + hSpaceAroundGap;
 
   // Move the left layers
   for (let i = 0; i < curLayerIndex - 1; i++) {
     let curX = nodeCoordinate[0][0].x + i * (nodeLength + leftGap);
-    moveLayerX({layerIndex: i, targetX: curX, disable: true, delay: 0});
+    moveLayerX({ layerIndex: i, targetX: curX, disable: true, delay: 0 });
   }
 
   // Add an overlay
-  let stops = [{offset: '0%', color: 'rgb(250, 250, 250)', opacity: 1},
-    {offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95},
-    {offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85}];
+  let stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 1 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85 }];
   addOverlayGradient('overlay-gradient-left', stops);
 
-  stops = [{offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85},
-    {offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95},
-    {offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1}];
+  stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1 }];
   addOverlayGradient('overlay-gradient-right', stops);
 
   addOverlayRect('overlay-gradient-left', nodeCoordinate[0][0].x - overlayRectOffset / 2,
     0, leftEnd - nodeCoordinate[0][0].x + overlayRectOffset,
     height + svgPaddings.top + svgPaddings.bottom);
-  
+
   addOverlayRect('overlay-gradient-right', rightStart - overlayRectOffset / 2,
     0, width - rightStart + overlayRectOffset,
     height + svgPaddings.top + svgPaddings.bottom);
-  
+
   // Draw the intermediate layer
-  let {intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax} =
+  let { intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax } =
     drawIntermediateLayer(curLayerIndex, leftX,
       nodeCoordinate[curLayerIndex][0].x, rightStart, intermediateGap,
       d, i, intermediateNodeMouseOverHandler,
@@ -1668,7 +1736,7 @@ export const drawConv4 = (curLayerIndex, d, i, width, height,
   addUnderneathRect(curLayerIndex, i, leftX, intermediateGap, 5,
     intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
     intermediateNodeClicked);
-          
+
   // After getting the intermediateMinMax, we can finally aggregate it with
   // the preLayer minmax, curLayer minmax
   let finalMinMax = {
@@ -1700,7 +1768,7 @@ export const drawConv4 = (curLayerIndex, d, i, width, height,
     minMax: finalMinMax,
     width: 2 * nodeLength + intermediateGap,
     x: leftX,
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10
   });
 
@@ -1712,7 +1780,7 @@ export const drawConv4 = (curLayerIndex, d, i, width, height,
     group: intermediateLayer,
     width: 2 * nodeLength + intermediateGap,
     x: targetX + nodeLength - (2 * nodeLength + intermediateGap),
-    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap + 
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
       nodeLength * 10,
     gradientAppendingName: 'kernelColorGradient',
     colorScale: layerColorScales.weight,
@@ -1720,6 +1788,244 @@ export const drawConv4 = (curLayerIndex, d, i, width, height,
   });
 
   // Show everything
+  svg.selectAll('g.intermediate-layer, g.intermediate-layer-annotation')
+    .style('opacity', 1);
+}
+
+export const drawConv5 = (curLayerIndex, d, i, width, height,
+  intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
+  intermediateNodeClicked) => {
+  // Task 3 at lines 1732-1837: keep the existing convolution detail-view style
+  // available when the selected model has additional convolution stages.
+
+  let targetX = nodeCoordinate[curLayerIndex][0].x;
+  let leftX = targetX - (2 * nodeLength +
+    2 * hSpaceAroundGap * gapRatio + plusSymbolRadius * 2);
+  let intermediateGap = (hSpaceAroundGap * gapRatio * 2) / 3;
+
+  intermediateLayerPosition['conv_3_1'] = targetX + nodeLength;
+  intermediateLayerPositionStore.set(intermediateLayerPosition);
+
+  svg.select('g.edge-group')
+    .style('visibility', 'hidden');
+
+  let { range, minMax } = redrawLayerIfNeeded(curLayerIndex, i);
+
+  moveLayerX({
+    layerIndex: curLayerIndex - 1, targetX: leftX,
+    disable: true, delay: 0
+  });
+
+  moveLayerX({
+    layerIndex: curLayerIndex,
+    targetX: targetX, disable: true,
+    delay: 0, opacity: 0.15, specialIndex: i
+  });
+
+  let leftEnd = leftX - hSpaceAroundGap;
+  let leftLayerCount = Math.max(curLayerIndex - 1, 0);
+  let leftAvailableWidth = Math.max(leftEnd - nodeCoordinate[0][0].x, 0);
+  let leftGap = getCompactRevealGap(leftAvailableWidth, leftLayerCount);
+  let rightStart = nodeCoordinate[curLayerIndex][0].x +
+    nodeLength + hSpaceAroundGap;
+
+  for (let li = 0; li < curLayerIndex - 1; li++) {
+    let curX = nodeCoordinate[0][0].x + li * (nodeLength + leftGap);
+    moveLayerX({ layerIndex: li, targetX: curX, disable: true, delay: 0 });
+  }
+
+  let stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 1 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.9 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85 }];
+  addOverlayGradient('overlay-gradient-left', stops);
+
+  stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1 }];
+  addOverlayGradient('overlay-gradient-right', stops);
+
+  addOverlayRect('overlay-gradient-left', nodeCoordinate[0][0].x - overlayRectOffset / 2,
+    0, leftEnd - nodeCoordinate[0][0].x + overlayRectOffset,
+    height + svgPaddings.top + svgPaddings.bottom);
+
+  addOverlayRect('overlay-gradient-right', rightStart - overlayRectOffset / 2,
+    0, width - rightStart + overlayRectOffset,
+    height + svgPaddings.top + svgPaddings.bottom);
+
+  let { intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax } =
+    drawIntermediateLayer(curLayerIndex, leftX,
+      nodeCoordinate[curLayerIndex][0].x, rightStart, intermediateGap,
+      d, i, intermediateNodeMouseOverHandler,
+      intermediateNodeMouseLeaveHandler, intermediateNodeClicked);
+  addUnderneathRect(curLayerIndex, i, leftX, intermediateGap, 5,
+    intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
+    intermediateNodeClicked);
+
+  let finalMinMax = {
+    min: Math.min(minMax.min, intermediateMinMax.min),
+    max: Math.max(minMax.max, intermediateMinMax.max)
+  }
+
+  let intermediateLayerAnnotation = svg.append('g')
+    .attr('class', 'intermediate-layer-annotation')
+    .style('opacity', 1);
+
+  drawIntermediateLayerAnnotation({
+    leftX: leftX,
+    curLayerIndex: curLayerIndex,
+    group: intermediateLayerAnnotation,
+    intermediateGap: intermediateGap,
+    i: i
+  });
+
+  intermediateLayer.raise();
+  intermediateLayerAnnotation.raise();
+
+  drawIntermediateLayerLegend({
+    legendHeight: 5,
+    curLayerIndex: curLayerIndex,
+    range: range,
+    group: intermediateLayer,
+    width: 2 * nodeLength + intermediateGap,
+    minMax: finalMinMax,
+    x: leftX,
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
+      nodeLength * 10
+  });
+
+  drawIntermediateLayerLegend({
+    legendHeight: 5,
+    curLayerIndex: curLayerIndex,
+    range: kernelRange,
+    minMax: kernelMinMax,
+    group: intermediateLayer,
+    width: 2 * nodeLength + intermediateGap,
+    x: targetX + nodeLength - (2 * nodeLength + intermediateGap),
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
+      nodeLength * 10,
+    gradientAppendingName: 'kernelColorGradient',
+    colorScale: layerColorScales.weight,
+    gradientGap: 0.2
+  });
+
+  svg.selectAll('g.intermediate-layer, g.intermediate-layer-annotation')
+    .style('opacity', 1);
+}
+
+export const drawConv6 = (curLayerIndex, d, i, width, height,
+  intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
+  intermediateNodeClicked) => {
+  // Task 3 at lines 1846-1951: keep the existing convolution detail-view style
+  // available when the selected model has additional convolution stages.
+  let targetX = nodeCoordinate[curLayerIndex][0].x;
+  let leftX = targetX - (2 * nodeLength +
+    2 * hSpaceAroundGap * gapRatio + plusSymbolRadius * 2);
+  let intermediateGap = (hSpaceAroundGap * gapRatio * 2) / 3;
+
+  intermediateLayerPosition['conv_3_2'] = leftX;
+  intermediateLayerPositionStore.set(intermediateLayerPosition);
+
+  svg.select('g.edge-group')
+    .style('visibility', 'hidden');
+
+  let { range, minMax } = redrawLayerIfNeeded(curLayerIndex, i);
+
+  moveLayerX({
+    layerIndex: curLayerIndex - 1, targetX: leftX,
+    disable: true, delay: 0
+  });
+
+  moveLayerX({
+    layerIndex: curLayerIndex,
+    targetX: targetX, disable: true,
+    delay: 0, opacity: 0.15, specialIndex: i
+  });
+
+  let leftEnd = leftX - hSpaceAroundGap;
+  let leftLayerCount = Math.max(curLayerIndex - 1, 0);
+  let leftAvailableWidth = Math.max(leftEnd - nodeCoordinate[0][0].x, 0);
+  let leftGap = getCompactRevealGap(leftAvailableWidth, leftLayerCount);
+  let rightStart = targetX + nodeLength + hSpaceAroundGap;
+
+  for (let li = 0; li < curLayerIndex - 1; li++) {
+    let curX = nodeCoordinate[0][0].x + li * (nodeLength + leftGap);
+    moveLayerX({ layerIndex: li, targetX: curX, disable: true, delay: 0 });
+  }
+
+  let stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 1 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 0.85 }];
+  addOverlayGradient('overlay-gradient-left', stops);
+
+  stops = [{ offset: '0%', color: 'rgb(250, 250, 250)', opacity: 0.85 },
+  { offset: '50%', color: 'rgb(250, 250, 250)', opacity: 0.95 },
+  { offset: '100%', color: 'rgb(250, 250, 250)', opacity: 1 }];
+  addOverlayGradient('overlay-gradient-right', stops);
+
+  addOverlayRect('overlay-gradient-left', nodeCoordinate[0][0].x - overlayRectOffset / 2,
+    0, leftEnd - nodeCoordinate[0][0].x + overlayRectOffset,
+    height + svgPaddings.top + svgPaddings.bottom);
+
+  addOverlayRect('overlay-gradient-right', rightStart - overlayRectOffset / 2,
+    0, width - rightStart + overlayRectOffset,
+    height + svgPaddings.top + svgPaddings.bottom);
+
+  let { intermediateLayer, intermediateMinMax, kernelRange, kernelMinMax } =
+    drawIntermediateLayer(curLayerIndex, leftX,
+      nodeCoordinate[curLayerIndex][0].x, rightStart, intermediateGap,
+      d, i, intermediateNodeMouseOverHandler,
+      intermediateNodeMouseLeaveHandler, intermediateNodeClicked);
+  addUnderneathRect(curLayerIndex, i, leftX, intermediateGap, 5,
+    intermediateNodeMouseOverHandler, intermediateNodeMouseLeaveHandler,
+    intermediateNodeClicked);
+
+  let finalMinMax = {
+    min: Math.min(minMax.min, intermediateMinMax.min),
+    max: Math.max(minMax.max, intermediateMinMax.max)
+  }
+
+  let intermediateLayerAnnotation = svg.append('g')
+    .attr('class', 'intermediate-layer-annotation')
+    .style('opacity', 1);
+
+  drawIntermediateLayerAnnotation({
+    leftX: leftX,
+    curLayerIndex: curLayerIndex,
+    group: intermediateLayerAnnotation,
+    intermediateGap: intermediateGap,
+    i: i
+  });
+
+  intermediateLayer.raise();
+  intermediateLayerAnnotation.raise();
+
+  drawIntermediateLayerLegend({
+    legendHeight: 5,
+    curLayerIndex: curLayerIndex,
+    range: range,
+    group: intermediateLayer,
+    minMax: finalMinMax,
+    width: 2 * nodeLength + intermediateGap,
+    x: leftX,
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
+      nodeLength * 10
+  });
+
+  drawIntermediateLayerLegend({
+    legendHeight: 5,
+    curLayerIndex: curLayerIndex,
+    range: kernelRange,
+    minMax: kernelMinMax,
+    group: intermediateLayer,
+    width: 2 * nodeLength + intermediateGap,
+    x: targetX + nodeLength - (2 * nodeLength + intermediateGap),
+    y: svgPaddings.top + vSpaceAroundGap * (10) + vSpaceAroundGap +
+      nodeLength * 10,
+    gradientAppendingName: 'kernelColorGradient',
+    colorScale: layerColorScales.weight,
+    gradientGap: 0.2
+  });
+
   svg.selectAll('g.intermediate-layer, g.intermediate-layer-annotation')
     .style('opacity', 1);
 }

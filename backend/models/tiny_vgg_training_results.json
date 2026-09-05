@@ -1,0 +1,38 @@
+[
+  {
+    "architectureKey": "tiny-vgg-7",
+    "path": "/content/CNN-Visualizer/backend/models/tiny_vgg_7.pt",
+    "bestEpoch": 70,
+    "trainLoss": 1.0875847024917602,
+    "trainAccuracy": 0.6154,
+    "validationLoss": 1.3229287900924682,
+    "validationAccuracy": 0.54,
+    "testLoss": 1.2884189710617064,
+    "testAccuracy": 0.552,
+    "elapsedMinutes": 1.8146846453348795
+  },
+  {
+    "architectureKey": "tiny-vgg-12",
+    "path": "/content/CNN-Visualizer/backend/models/tiny_vgg_12.pt",
+    "bestEpoch": 25,
+    "trainLoss": 0.8999180004119873,
+    "trainAccuracy": 0.683,
+    "validationLoss": 1.1784940166473388,
+    "validationAccuracy": 0.604,
+    "testLoss": 1.1633510613441467,
+    "testAccuracy": 0.62,
+    "elapsedMinutes": 0.8403486410776774
+  },
+  {
+    "architectureKey": "tiny-vgg-17",
+    "path": "/content/CNN-Visualizer/backend/models/tiny_vgg_17.pt",
+    "bestEpoch": 47,
+    "trainLoss": 0.7590105101585388,
+    "trainAccuracy": 0.7384,
+    "validationLoss": 1.1899164481163025,
+    "validationAccuracy": 0.616,
+    "testLoss": 1.3767106380462646,
+    "testAccuracy": 0.584,
+    "elapsedMinutes": 1.3671863873799641
+  }
+]

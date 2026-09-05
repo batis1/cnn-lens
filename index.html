@@ -56,8 +56,15 @@
       href="https://fonts.googleapis.com/css?family=Neucha&display=swap"
       rel="stylesheet"
     />
-    <script src="https://d3js.org/d3.v5.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.0/dist/tf.min.js"></script>
+    <!-- LOCAL_DEV_RUNTIME_BOOTSTRAP:
+      d3 and TensorFlow.js are now imported from local node_modules in
+      src/main.js before the Svelte app loads. Keep these CDN references
+      commented so VPN/proxy/CDN failures do not break local startup.
+
+      Original CDN fallback if you ever need to restore it:
+      <script src="https://d3js.org/d3.v5.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.0/dist/tf.min.js"></script>
+    -->
     <script
       defer
       src="https://use.fontawesome.com/releases/v5.3.1/js/all.js"

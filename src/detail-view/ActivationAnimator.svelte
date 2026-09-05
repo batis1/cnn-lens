@@ -9,6 +9,7 @@
   export let output;
   export let isPaused;
   export let dataRange;
+  export let activationType = 'relu';
 
   const dispatch = createEventDispatcher();
   const padding = 0;
@@ -29,7 +30,7 @@
   let counter;
 
   // lots of replication between mouseover and start-relu. TODO: fix this.
-  function startRelu() {
+  function startActivation() {
     counter = 0;
     if (interval) clearInterval(interval);
     interval = setInterval(() => {
@@ -66,11 +67,11 @@
     });
   }
 
-  startRelu();
+  startActivation();
   let gridImage = gridData(image)
   let gridOutput = gridData(output)
   $ : {
-    startRelu();
+    startActivation();
     gridImage = gridData(image)
     gridOutput = gridData(output)
   }
@@ -91,13 +92,20 @@
 </div>
 <div class="column has-text-centered">
   <span>
-    max(
-    <Dataview data={gridData([[0]])} highlights={outputHighlights} isKernelMath={true} 
-    constraint={20} dataRange={dataRange}/>
-    ,
-    <Dataview data={gridInputMatrixSlice} highlights={outputHighlights} isKernelMath={true} 
-    constraint={20} dataRange={dataRange}/>
-    )
+    {#if activationType === 'sigmoid'}
+      σ(
+      <Dataview data={gridInputMatrixSlice} highlights={outputHighlights} isKernelMath={true}
+      constraint={20} dataRange={dataRange}/>
+      )
+    {:else}
+      max(
+      <Dataview data={gridData([[0]])} highlights={outputHighlights} isKernelMath={true}
+      constraint={20} dataRange={dataRange}/>
+      ,
+      <Dataview data={gridInputMatrixSlice} highlights={outputHighlights} isKernelMath={true}
+      constraint={20} dataRange={dataRange}/>
+      )
+    {/if}
     =
     <Dataview data={gridOutputMatrixSlice} highlights={outputHighlights} isKernelMath={true} 
       constraint={20} dataRange={dataRange}/>
