@@ -15,7 +15,7 @@
   <section class="welcome" aria-label="Welcome to CNN Lens">
     <div class="introduction">
       <div class="journey" aria-hidden="true">
-        <img src="assets/img/espresso_1.jpeg" alt="" />
+        <img src={`${import.meta.env.BASE_URL}assets/img/sample_val_1471.JPEG`} alt="" />
         <span class="flow"><i class="fas fa-arrow-right"></i></span>
         <span class="network"><i class="fas fa-microchip"></i></span>
         <span class="flow"><i class="fas fa-arrow-right"></i></span>

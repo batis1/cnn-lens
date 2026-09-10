@@ -1,0 +1,102 @@
+[
+  {
+    "file": "sample_val_1239.JPEG",
+    "class": "lifeboat",
+    "source": "data/class_10_val/test_images/val_1239.JPEG"
+  },
+  {
+    "file": "sample_val_1245.JPEG",
+    "class": "lifeboat",
+    "source": "data/class_10_val/test_images/val_1245.JPEG"
+  },
+  {
+    "file": "sample_val_1349.JPEG",
+    "class": "ladybug",
+    "source": "data/class_10_val/test_images/val_1349.JPEG"
+  },
+  {
+    "file": "sample_val_1724.JPEG",
+    "class": "ladybug",
+    "source": "data/class_10_val/test_images/val_1724.JPEG"
+  },
+  {
+    "file": "sample_val_1159.JPEG",
+    "class": "pizza",
+    "source": "data/class_10_val/test_images/val_1159.JPEG"
+  },
+  {
+    "file": "sample_val_1488.JPEG",
+    "class": "pizza",
+    "source": "data/class_10_val/test_images/val_1488.JPEG"
+  },
+  {
+    "file": "sample_val_1395.JPEG",
+    "class": "bell pepper",
+    "source": "data/class_10_val/test_images/val_1395.JPEG"
+  },
+  {
+    "file": "sample_val_1581.JPEG",
+    "class": "bell pepper",
+    "source": "data/class_10_val/test_images/val_1581.JPEG"
+  },
+  {
+    "file": "sample_val_1182.JPEG",
+    "class": "school bus",
+    "source": "data/class_10_val/test_images/val_1182.JPEG"
+  },
+  {
+    "file": "sample_val_1815.JPEG",
+    "class": "school bus",
+    "source": "data/class_10_val/test_images/val_1815.JPEG"
+  },
+  {
+    "file": "sample_val_1083.JPEG",
+    "class": "koala",
+    "source": "data/class_10_val/test_images/val_1083.JPEG"
+  },
+  {
+    "file": "sample_val_1240.JPEG",
+    "class": "koala",
+    "source": "data/class_10_val/test_images/val_1240.JPEG"
+  },
+  {
+    "file": "sample_val_1471.JPEG",
+    "class": "espresso",
+    "source": "data/class_10_val/test_images/val_1471.JPEG"
+  },
+  {
+    "file": "sample_val_2195.JPEG",
+    "class": "espresso",
+    "source": "data/class_10_val/test_images/val_2195.JPEG"
+  },
+  {
+    "file": "sample_val_1313.JPEG",
+    "class": "red panda",
+    "source": "data/class_10_val/test_images/val_1313.JPEG"
+  },
+  {
+    "file": "sample_val_1641.JPEG",
+    "class": "red panda",
+    "source": "data/class_10_val/test_images/val_1641.JPEG"
+  },
+  {
+    "file": "sample_val_1191.JPEG",
+    "class": "orange",
+    "source": "data/class_10_val/test_images/val_1191.JPEG"
+  },
+  {
+    "file": "sample_val_1250.JPEG",
+    "class": "orange",
+    "source": "data/class_10_val/test_images/val_1250.JPEG"
+  },
+  {
+    "file": "sample_val_1071.JPEG",
+    "class": "sport car",
+    "source": "data/class_10_val/test_images/val_1071.JPEG"
+  },
+  {
+    "file": "sample_val_1507.JPEG",
+    "class": "sport car",
+    "source": "data/class_10_val/test_images/val_1507.JPEG"
+  }
+]

@@ -33,6 +33,7 @@
   import Modal from "./Modal.svelte";
   import WonderingSelect from "./WonderingSelect.svelte";
   import ImageBubblePicker from "./ImageBubblePicker.svelte";
+  import extraGalleryImages from "../../public/assets/img/gallery.json";
   import VisualizationLoader from "./VisualizationLoader.svelte";
   import WelcomeTour from "./WelcomeTour.svelte";
   import ArchitectureSummary from "./ArchitectureSummary.svelte";
@@ -424,12 +425,12 @@
     { file: "orange_1.jpeg", class: "orange" },
     { file: "car_1.jpeg", class: "sport car" },
   ];
-  const tinyVggImageOptions = tensorflowImageOptions.map((image) => ({
+  const tinyVggImageOptions = extraGalleryImages.map((image) => ({
     ...image,
     backendPath: `assets/img/${image.file}`,
     src: `${import.meta.env.BASE_URL}assets/img/${image.file}`,
   }));
-  const DEFAULT_TINY_VGG_IMAGE_FILE = "espresso_1.jpeg";
+  const DEFAULT_TINY_VGG_IMAGE_FILE = "sample_val_1471.JPEG";
   const pytorchDigitImageOptions = [
     {
       file: "test_original/1_7.jpg",

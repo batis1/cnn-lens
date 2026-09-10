@@ -87,7 +87,8 @@
   .bubble-trigger:focus-visible { outline: 2px solid var(--primary-border); outline-offset: 4px; }
   .bubble-trigger:disabled { opacity: .5; cursor: wait; }
   .bubble-options { position: absolute; top: 72px; left: 0; display: flex; flex-wrap: wrap; gap: 8px; width: max-content; max-width: min(760px, calc(100vw - 48px)); box-sizing: border-box; padding: 14px; border: 1px solid #d3ccc1; border-radius: 10px; background: #fffaf0; box-shadow: 0 10px 28px rgba(48, 41, 37, 0.12), 0 2px 6px rgba(48, 41, 37, 0.08); }
-  .bubble-options :global(.image-container) { animation: bubble-arrive 280ms cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--bubble-order, 0) * 28ms); }
+  .bubble-options { max-height: min(360px, 55dvh); overflow-y: auto; }
+  .bubble-options :global(.image-container) { animation: bubble-arrive 280ms cubic-bezier(.2,.8,.2,1) both; animation-delay: min(calc(var(--bubble-order, 0) * 28ms), 280ms); }
   @keyframes bubble-arrive { from { opacity: 0; transform: translateY(-10px) scale(.65); } to { opacity: 1; transform: translateY(0) scale(1); } }
   @media (prefers-reduced-motion: reduce) { .bubble-options :global(.image-container) { animation: none; } }
 </style>
