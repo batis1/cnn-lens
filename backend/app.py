@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gzip
+
 from flask import Flask, jsonify, request, send_file
 
 try:
@@ -27,6 +29,19 @@ except ImportError:  # pragma: no cover - used when imported as backend.app
 
 def create_app() -> Flask:
     app = Flask(__name__)
+
+    @app.after_request
+    def compress_json(response):
+        # Feature maps are large; compress before the serverless response limit.
+        if response.is_json and "gzip" in request.headers.get("Accept-Encoding", ""):
+            content = response.get_data()
+            if len(content) > 1024:
+                compressed = gzip.compress(content)
+                response.response = (compressed[start:start + 65536] for start in range(0, len(compressed), 65536))
+                response.headers.pop("Content-Length", None)
+                response.headers["Content-Encoding"] = "gzip"
+                response.vary.add("Accept-Encoding")
+        return response
 
     if CORS is not None:
         CORS(app, resources={rf"{API_PREFIX}/*": {"origins": "*"}})

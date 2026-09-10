@@ -1,0 +1,11 @@
+output
+.playwright-cli
+tiny-vgg
+_minted
+.venv
+backend/.venv
+backend/outputs
+backend/uploads
+backend/data/generated
+public/custom-inputs
+*.log

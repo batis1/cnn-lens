@@ -1,0 +1,19 @@
+[project]
+name = "cnn-lens-backend"
+version = "1.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "Flask>=3.0,<4.0",
+  "flask-cors>=4.0,<6.0",
+  "numpy>=1.24,<3",
+  "Pillow>=10.0",
+  "torch==2.5.1+cpu",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

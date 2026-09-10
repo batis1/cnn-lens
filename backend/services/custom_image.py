@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import ipaddress
+import os
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -40,6 +41,14 @@ def prepare_custom_image(source: str) -> dict[str, str]:
     suffix = FORMAT_SUFFIXES.get(image_format)
     if suffix is None:
         raise ValueError("Use a PNG or JPEG image.")
+
+    if os.environ.get("VERCEL"):
+        with Image.open(BytesIO(image_bytes)) as image:
+            image = image.convert("RGB")
+            image.thumbnail((1024, 1024))
+            buffer = BytesIO()
+            image.save(buffer, format="JPEG", quality=90)
+        return {"imagePath": "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")}
 
     CUSTOM_IMAGE_ROOT.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(image_bytes).hexdigest()[:20]

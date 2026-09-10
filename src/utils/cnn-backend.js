@@ -24,10 +24,10 @@ class Link {
 }
 
 export const defaultBackendApiBase = import.meta.env.VITE_BACKEND_API_BASE ||
-  'http://127.0.0.1:8000/api';
+  (import.meta.env.PROD ? '/api' : 'http://127.0.0.1:8000/api');
 
 export const getBackendImageUrl = (imagePath, apiBase = defaultBackendApiBase) =>
-  `${apiBase}/image?path=${encodeURIComponent(imagePath)}`;
+  imagePath?.startsWith('data:image/') ? imagePath : `${apiBase}/image?path=${encodeURIComponent(imagePath)}`;
 
 export const loadBackendModelOptions = async (apiBase = defaultBackendApiBase) => {
   let response = await fetch(`${apiBase}/models`);

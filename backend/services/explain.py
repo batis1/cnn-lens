@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -11,9 +12,11 @@ from torch import nn
 try:
     from services.model_loader import load_registered_model
     from services.path_resolver import resolve_explain_image_path
+    from services.custom_image import _decode_data_url, _validate_image
 except ImportError:  # pragma: no cover - used when imported as backend.services
     from .model_loader import load_registered_model
     from .path_resolver import resolve_explain_image_path
+    from .custom_image import _decode_data_url, _validate_image
 
 
 def build_explanation(model_spec: dict, image_path: str) -> dict:
@@ -23,7 +26,13 @@ def build_explanation(model_spec: dict, image_path: str) -> dict:
         )
 
     model = load_registered_model(model_spec)
-    resolved_image_path = resolve_explain_image_path(image_path)
+    is_inline_image = image_path.startswith("data:image/")
+    if is_inline_image:
+        image_bytes = _decode_data_url(image_path)
+        _validate_image(image_bytes)
+        resolved_image_path = BytesIO(image_bytes)
+    else:
+        resolved_image_path = resolve_explain_image_path(image_path)
     image_tensor, input_array = load_image_tensor(
         resolved_image_path,
         model_spec.get("inputShape", [1, 28, 28]),
@@ -46,9 +55,9 @@ def build_explanation(model_spec: dict, image_path: str) -> dict:
             "classLabels": class_labels,
         },
         "image": {
-            "requestedPath": image_path,
-            "resolvedPath": str(resolved_image_path),
-            "inferredLabel": infer_label_from_filename(resolved_image_path),
+            "requestedPath": "custom image" if is_inline_image else image_path,
+            "resolvedPath": "custom image" if is_inline_image else str(resolved_image_path),
+            "inferredLabel": None if is_inline_image else infer_label_from_filename(resolved_image_path),
             "preprocessing": {
                 "mode": "grayscale" if model_spec.get("inputShape", [1])[0] == 1 else "rgb",
                 "resize": model_spec.get("inputShape", [1, 28, 28])[1:],

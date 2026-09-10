@@ -26,3 +26,6 @@ backend/*.log
 .env.local
 .env.*.local
 public/custom-inputs/
+
+.vercel
+.env*

@@ -1,0 +1,14 @@
+{
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "includeFiles": "{backend/**,public/assets/img/**}",
+      "excludeFiles": "{node_modules/**,dist/**,src/**,tiny-vgg/**,output/**,.git/**,public/assets/data/**,public/custom-inputs/**}"
+    }
+  },
+  "rewrites": [{ "source": "/api/:path*", "destination": "/api/index" }]
+}
