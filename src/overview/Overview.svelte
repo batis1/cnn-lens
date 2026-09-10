@@ -430,7 +430,7 @@
     backendPath: `assets/img/${image.file}`,
     src: `${import.meta.env.BASE_URL}assets/img/${image.file}`,
   }));
-  const DEFAULT_TINY_VGG_IMAGE_FILE = "sample_val_1471.JPEG";
+  const DEFAULT_TINY_VGG_IMAGE_FILE = "sample_val_1182.JPEG";
   const pytorchDigitImageOptions = [
     {
       file: "test_original/1_7.jpg",
