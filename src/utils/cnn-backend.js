@@ -27,7 +27,9 @@ export const defaultBackendApiBase = import.meta.env.VITE_BACKEND_API_BASE ||
   (import.meta.env.PROD ? '/api' : 'http://127.0.0.1:8000/api');
 
 export const getBackendImageUrl = (imagePath, apiBase = defaultBackendApiBase) =>
-  imagePath?.startsWith('data:image/') ? imagePath : `${apiBase}/image?path=${encodeURIComponent(imagePath)}`;
+  imagePath?.startsWith('data:image/') ? imagePath :
+    import.meta.env.PROD && imagePath?.startsWith('assets/') ? `/${imagePath}` :
+    `${apiBase}/image?path=${encodeURIComponent(imagePath)}`;
 
 export const loadBackendModelOptions = async (apiBase = defaultBackendApiBase) => {
   let response = await fetch(`${apiBase}/models`);
@@ -62,6 +64,17 @@ export const explainWithBackend = async (
   imagePath,
   apiBase = defaultBackendApiBase,
 ) => {
+  if (import.meta.env.PROD && imagePath.startsWith('assets/')) {
+    const imageResponse = await fetch(`/${imagePath}`);
+    if (!imageResponse.ok) throw new Error('Could not load the selected image.');
+    const blob = await imageResponse.blob();
+    imagePath = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Could not read the selected image.'));
+      reader.readAsDataURL(blob);
+    });
+  }
   let response = await fetch(`${apiBase}/explain`, {
     method: 'POST',
     headers: {
