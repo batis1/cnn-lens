@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 try:
     from config import AI_TEST_UI_ROOT, PROJECT_ROOT
@@ -9,7 +10,7 @@ except ImportError:  # pragma: no cover - used when imported as backend.services
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
-PUBLIC_ROOT = (PROJECT_ROOT / "public").resolve()
+PUBLIC_ROOT = (PROJECT_ROOT / ("backend/public" if os.environ.get("VERCEL") else "public")).resolve()
 
 
 def resolve_ai_test_image_path(path_text: str | None) -> Path:
