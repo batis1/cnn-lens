@@ -275,7 +275,7 @@
       Softmax Score for <i>"{outputName}"</i>
     </div>
 
-    <svg id="softmax-svg" width="470" height="105"/>
+    <svg id="softmax-svg" width="470" height="105" viewBox="0 0 470 105" style="max-width: 100%; height: auto;"/>
 
     <div class="annotation">
       <img src='assets/img/pointer.svg' alt='pointer icon'>

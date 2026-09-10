@@ -11,6 +11,7 @@ try:
     from config import API_PREFIX, DEBUG, HOST, PORT
     from services.explain import build_explanation
     from services.data_generator import generate_test_data
+    from services.custom_image import prepare_custom_image
     from services.model_registry import find_model_by_source_path, get_model, list_models
     from services.path_resolver import resolve_ai_test_image_path
     from services.test_runner import run_model_test
@@ -18,6 +19,7 @@ except ImportError:  # pragma: no cover - used when imported as backend.app
     from .config import API_PREFIX, DEBUG, HOST, PORT
     from .services.explain import build_explanation
     from .services.data_generator import generate_test_data
+    from .services.custom_image import prepare_custom_image
     from .services.model_registry import find_model_by_source_path, get_model, list_models
     from .services.path_resolver import resolve_ai_test_image_path
     from .services.test_runner import run_model_test
@@ -68,6 +70,17 @@ def create_app() -> Flask:
             return jsonify({"error": str(exc)}), 400
 
         return send_file(resolved_image_path)
+
+    @app.post(f"{API_PREFIX}/custom-image")
+    def custom_image():
+        payload = request.get_json(silent=True) or {}
+        source = payload.get("source", "")
+        try:
+            result = prepare_custom_image(source)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        return jsonify(result)
 
     @app.post(f"{API_PREFIX}/explain")
     def explain():

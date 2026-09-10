@@ -1,6 +1,5 @@
 <script>
   import Explainer from "./Explainer.svelte";
-  import Header from "./Header.svelte";
 </script>
 
 <div id="app-page">
@@ -13,9 +12,20 @@
     display-delay="30000"
     homepage-url="https://poloclub.github.io/"
   />
-  <Header />
   <Explainer />
 </div>
 
 <style>
+  #app-page {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: var(--page-chrome);
+  }
+  @media (max-width: 1100px), (max-height: 600px) {
+    #app-page { overflow-y: auto; overflow-x: hidden; }
+  }
 </style>

@@ -31,8 +31,14 @@
   import SoftmaxView from "../detail-view/Softmaxview.svelte";
   import DenseView from "../detail-view/Denseview.svelte";
   import Modal from "./Modal.svelte";
-  import Article from "../article/Article.svelte";
+  import WonderingSelect from "./WonderingSelect.svelte";
+  import ImageBubblePicker from "./ImageBubblePicker.svelte";
+  import VisualizationLoader from "./VisualizationLoader.svelte";
+  import WelcomeTour from "./WelcomeTour.svelte";
+  import ArchitectureSummary from "./ArchitectureSummary.svelte";
+  import RevealMenu from "./RevealMenu.svelte";
   import AiTestPanel from "../ai-test-ui/AiTestPanel.svelte";
+  import Header from "../Header.svelte";
 
   // Overview functions
   import { loadTrainedModel, constructCNN } from "../utils/cnn-tf.js";
@@ -548,12 +554,85 @@
   let selectedModelId = "";
   let selectedModelSpec = undefined;
   let isModelLoading = false;
+  let isInitializingVisualization = true;
+  let pendingVisualizations = 0;
+  let graphZoom;
+  let zoomViewport;
+  let graphZoomPercent = 100;
+  const zoomGraph = (factor) => {
+    if (wholeSvg && graphZoom) wholeSvg.call(graphZoom.scaleBy, factor);
+  };
+  const resetGraphZoom = () => {
+    if (wholeSvg && graphZoom) wholeSvg.call(graphZoom.transform, d3.zoomIdentity);
+  };
+  let showWelcome = true;
+  let tourActive = false;
+  let tourStep = 0;
+  let tourBusy = false;
+  let tourTitle = "Choose an image";
+  let tourDescription = "Next selects a sample image and reveals its red, green, and blue channels. You can choose another image later.";
+  let tourError = "";
+  $: tourTotal = (cnn?.length || 12) + 4;
+
+  const startTour = () => {
+    showWelcome = false;
+    tourActive = true;
+    tourStep = 0;
+    resetOverviewLayerReveal();
+  };
+  const skipTour = () => { showWelcome = false; tourActive = false; };
+  const advanceTour = async () => {
+    if (tourBusy || isVisualizationLoading) return;
+    tourBusy = true;
+    tourError = "";
+    try {
+      if (tourStep === 0) {
+        await selectVisualizationImage(imageOptions.find(image => image.file === DEFAULT_TINY_VGG_IMAGE_FILE)?.file || imageOptions[0].file);
+        resetOverviewLayerReveal();
+        tourTitle = "The input: three color channels";
+        tourDescription = "The network reads numbers for red, green, and blue. Next uses Show to reveal the first learned filters.";
+      } else if (canRevealNextOverviewLayer()) {
+        const name = manualRevealInfo.nextLabel;
+        manualRevealButtonClicked();
+        tourTitle = formatToolbarLayerName(name);
+        const lower = name.toLowerCase();
+        tourDescription = lower.includes("conv") ? "Learned filters scan the image for patterns. Each feature map shows where a filter responds." : lower.includes("relu") ? "ReLU keeps positive responses and sets negative values to zero, helping the network represent more complex patterns." : lower.includes("pool") ? "Pooling reduces the spatial size of feature maps, summarizing nearby responses." : "The final scores compare the image with the learned classes. Next opens the classifier to inspect Flatten.";
+      } else if (tourStep === tourTotal - 4) {
+        openFlattenViewForCurrentPrediction();
+        tourTitle = "Flatten: from maps to a vector";
+        tourDescription = "Flatten rearranges the feature maps into one long vector without learning new values. Next opens a dense neuron so you can inspect how it combines these inputs.";
+      } else if (tourStep === tourTotal - 3) {
+        const denseNode = svg.select(".classifier-hidden-node").node();
+        if (!denseNode) throw new Error("No dense neuron available for the tour");
+        denseNode.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        tourTitle = "Inside a dense neuron";
+        tourDescription = "The dense popup shows inputs multiplied by learned weights, then added with a bias. An activation turns that sum into the neuron's output. Next opens Softmax and the class logits.";
+      } else if (tourStep === tourTotal - 2) {
+        closeDenseNeuronDetail(false);
+        const softmaxButton = svg.select(".softmax-symbol").node();
+        if (!softmaxButton) throw new Error("Softmax control is unavailable");
+        softmaxButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        tourTitle = "Logits become probabilities";
+        tourDescription = "Logits are raw class scores, not probabilities. The Softmax popup exponentiates and normalizes them so the probabilities sum to one. Compare each logit with its probability, then finish to explore on your own.";
+      } else {
+        tourActive = false;
+        return;
+      }
+      tourStep += 1;
+      await new Promise(resolve => window.setTimeout(resolve, 1600));
+    } catch (error) {
+      tourError = "This step could not finish. Please try Next again.";
+      console.error("Guided tour failed", error);
+    } finally { tourBusy = false; }
+  };
+  $: isVisualizationLoading = isInitializingVisualization || isModelLoading || pendingVisualizations > 0;
 
   let nodeData;
   let selectedNodeIndex = -1;
   let isExitedFromDetailedView = true;
   let isExitedFromCollapse = true;
   let customImageURL = null;
+  let customImageBackendPath = null;
   let hasRenderedOverview = false;
 
   // Task 3 at lines 274-296: bundled fallback model list so the selector still
@@ -578,6 +657,12 @@
   ];
 
   const getCurrentInputSource = () => {
+    if (selectedImage === "custom") {
+      return ACTIVE_MODEL_RUNTIME === RUNTIME_PYTORCH_BACKEND
+        ? customImageBackendPath
+        : customImageURL;
+    }
+
     if (ACTIVE_MODEL_RUNTIME === RUNTIME_PYTORCH_BACKEND) {
       let selectedOption = imageOptions.find(
         (image) => image.file === selectedImage,
@@ -585,10 +670,6 @@
       return (
         selectedOption?.backendPath || selectedOption?.file || selectedImage
       );
-    }
-
-    if (selectedImage === "custom" && customImageURL) {
-      return customImageURL;
     }
 
     return `assets/img/${selectedImage}`;
@@ -850,6 +931,9 @@
   };
 
   const reconstructCnnForCurrentInput = async ({ redraw = true } = {}) => {
+    pendingVisualizations += 1;
+    try {
+      await tick();
     // Task 3 at lines 335-340: one shared refresh path for normal image
     // changes, custom-image changes, and model switches, so every redraw uses
     // the currently selected model architecture.
@@ -882,6 +966,9 @@
 
     if (svg && redraw) {
       redrawOverviewLayout();
+    }
+    } finally {
+      pendingVisualizations -= 1;
     }
   };
   //Task 4 at lines 340-418: derive the metadata needed for dynamic legend generation and layer display from the model JSON, so that the overview can adapt to different architectures without hardcoded assumptions.
@@ -1016,7 +1103,12 @@
 
   const loadBackendModelManifest = async () => {
     try {
-      return await loadBackendModelOptions(PYTORCH_BACKEND_API_BASE);
+      let backendModels = await loadBackendModelOptions(
+        PYTORCH_BACKEND_API_BASE,
+      );
+      return backendModels.filter((modelOption) =>
+        modelOption.family === "tiny-vgg",
+      );
     } catch (error) {
       console.warn(
         "[Overview] Failed to load PyTorch backend model list",
@@ -1510,7 +1602,7 @@
 
     // Compute the left and right overlay rect width
     let rightWidth = width - rightStart - overlayRectOffset / 2;
-    let leftWidth = leftX - nodeCoordinate[0][0].x;
+    let leftWidth = leftX - overlayRectOffset / 2;
 
     // The overlay rects should be symmetric
     if (rightWidth > leftWidth) {
@@ -1557,7 +1649,7 @@
 
     addOverlayRect(
       "overlay-gradient-left",
-      nodeCoordinate[0][0].x - overlayRectOffset / 2,
+      0,
       0,
       leftWidth,
       height + svgPaddings.top,
@@ -1904,6 +1996,13 @@
     ) {
       quitIntermediateView(curLayerIndex, g, i);
     }
+
+    if (
+      !isInActPoolDetailView &&
+      (d.type === "conv" || d.type === "relu" || d.type === "pool")
+    ) {
+      svg.selectAll("g.output-winner-overlay").raise();
+    }
   };
 
   const nodeMouseOverHandler = (d, i, g) => {
@@ -2049,7 +2148,19 @@
       wholeSvg
         .attr("viewBox", `0 0 ${logicalSvgWidth} ${logicalSvgHeight}`)
         .attr("preserveAspectRatio", "xMidYMid meet");
-      svg = wholeSvg
+      graphZoom = d3.zoom()
+        .extent([[0, 0], [logicalSvgWidth, logicalSvgHeight]])
+        .scaleExtent([1, 5])
+        .translateExtent([[0, 0], [logicalSvgWidth, logicalSvgHeight]])
+        .filter(() => !d3.event.button && !(d3.event.type === "wheel" && d3.event.ctrlKey))
+        .on("zoom", () => {
+          const { x, y, k } = d3.event.transform;
+          graphZoomPercent = Math.round(k * 100);
+          zoomViewport?.attr("transform", `translate(${x}, ${y}) scale(${k})`);
+        });
+      wholeSvg.call(graphZoom).on("dblclick.zoom", null);
+      zoomViewport = wholeSvg.append("g").attr("class", "zoom-viewport");
+      svg = zoomViewport
         .append("g")
         .attr("class", "main-svg")
         .attr("transform", `translate(${svgPaddings.left}, 0)`);
@@ -2141,6 +2252,8 @@
     } catch (error) {
       console.error("[Overview:onMount] failed", error);
       throw error;
+    } finally {
+      isInitializingVisualization = false;
     }
   });
 
@@ -2244,6 +2357,7 @@
   };
 
   const manualRevealButtonClicked = () => {
+    showWelcome = false;
     clearAutoRevealTimer();
     revealNextOverviewLayer();
   };
@@ -2298,7 +2412,7 @@
     await runAutoRevealFromInputToOutput({ showFlatten: true });
   };
 
-  const customImageClicked = () => {
+  const customImageClicked = async () => {
     // Case 1: there is no custom image -> show the modal to get user input
     if (customImageURL === null) {
       modalInfo.show = true;
@@ -2309,8 +2423,7 @@
     // Case 2: there is an existing custom image, not the focus -> switch to this image
     else if (selectedImage !== "custom") {
       selectedImage = "custom";
-      let fakeEvent = { detail: { url: customImageURL } };
-      handleCustomImage(fakeEvent);
+      await reconstructCnnForCurrentInput();
     }
 
     // Case 3: there is an existing custom image, and its the focus -> let user
@@ -2321,9 +2434,6 @@
       modalStore.set(modalInfo);
     }
 
-    if (selectedImage !== "custom" && customImageURL === null) {
-      selectedImage = "custom";
-    }
   };
 
   const handleModalCanceled = (event) => {
@@ -2333,8 +2443,8 @@
   };
 
   const handleCustomImage = async (event) => {
-    // User gives a valid image URL
     customImageURL = event.detail.url;
+    customImageBackendPath = event.detail.imagePath || null;
     selectedImage = "custom";
     await reconstructCnnForCurrentInput();
   };
@@ -2719,8 +2829,8 @@
         .attr("y", -22)
         .attr("width", 130)
         .attr("height", 44)
-        .attr("rx", 6)
-        .attr("ry", 6);
+        .attr("rx", 8)
+        .attr("ry", 8);
       indicator
         .append("text")
         .attr("x", alignment === "end" ? -65 : 65)
@@ -2766,15 +2876,6 @@
     }
 
     layerFocusAnnouncement = `No layer matches "${layerSearchValue}".`;
-  };
-
-  const handleLayerSearchKeydown = (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      focusLayerFromSearch();
-    } else if (event.key === "Escape" && isLayerFocusActive) {
-      exitLayerFocus();
-    }
   };
 
   const moveLayerFocus = (direction) => {
@@ -2825,13 +2926,32 @@
   class="overview"
   bind:this={overviewComponent}
 >
+  <div class="header-panel">
+    <Header on:home={() => {
+      clearAutoRevealTimer();
+      tourActive = false;
+      closeDenseNeuronDetail(false);
+      if (isInIntermediateView && selectedNode.data) {
+        quitIntermediateView(layerIndexDict[selectedNode.layerName], selectedNode.domG, selectedNode.domI);
+      }
+      if (isInActPoolDetailView) quitActPoolDetailView();
+      softmaxDetailViewStore.set({ show: false, logits: [] });
+      denseDetailViewStore.set({ show: false });
+      selectedNodeIndex = -1;
+      detailedViewNum = undefined;
+      if (isLayerFocusActive) exitLayerFocus();
+      resetOverviewLayerReveal();
+      resetGraphZoom();
+      showWelcome = true;
+      tourTitle = "Choose an image";
+      tourDescription = "Next selects a sample image and reveals its red, green, and blue channels. You can choose another image later.";
+      tourError = "";
+      document.getElementById("app-page")?.scrollTo({ top: 0 });
+    }} />
   <div class="control-container">
     <div class="control-summary">
       {#if selectedModelSpec}
-        {selectedModelSpec.totalLayers} layers | {selectedModelSpec.summary}
-        {#if selectedModelSpec.convKernelSummary}
-          | {selectedModelSpec.convKernelSummary}
-        {/if}
+        <ArchitectureSummary count={selectedModelSpec.totalLayers || cnn?.length} summary={selectedModelSpec.summary} kernels={selectedModelSpec.convKernelSummary} />
       {:else if isModelLoading}
         Loading model...
       {/if}
@@ -2840,9 +2960,11 @@
     <div class="control-row">
       {#if !isAiTestUiMode}
         <div class="left-control">
+          <ImageBubblePicker images={imageOptions} selected={selectedImage} customURL={customImageURL} disabled={disableControl || isModelLoading}>
           {#each imageOptions as image, i}
             <div
               class="image-container"
+              style={`--bubble-order: ${i}`}
               on:click={disableControl || isModelLoading
                 ? () => {}
                 : imageOptionClicked}
@@ -2858,6 +2980,7 @@
               data-imageName={image.file}
               role="button"
               tabindex="0"
+              aria-label={`Use ${image.class} image`}
             >
               <img
                 src={image.src || `assets/img/${image.file}`}
@@ -2868,15 +2991,9 @@
             </div>
           {/each}
 
-          <!--
-            PYTORCH_BACKEND_INTEGRATION:
-            Custom image URLs are part of the original TensorFlow.js browser-only
-            flow. They remain below and become active again if ACTIVE_MODEL_RUNTIME
-            is switched to RUNTIME_TENSORFLOW_JS.
-          -->
-          {#if ACTIVE_MODEL_RUNTIME !== RUNTIME_PYTORCH_BACKEND}
-            <div
+          <div
               class="image-container"
+              style={`--bubble-order: ${imageOptions.length}`}
               class:inactive={selectedImage !== "custom"}
               class:disabled={disableControl || isModelLoading}
               data-imageName={"custom"}
@@ -2892,12 +3009,13 @@
                 )}
               role="button"
               tabindex="0"
+              aria-label={customImageURL ? "Change custom input image" : "Add custom input image"}
             >
               <img
-                class="custom-image"
-                src="assets/img/plus.svg"
-                alt="plus button"
-                title="Add new input image"
+                class:custom-image={!customImageURL}
+                src={customImageURL || "assets/img/plus.svg"}
+                alt={customImageURL ? "Custom input" : "Add input"}
+                title={customImageURL ? "Change input image" : "Add input image"}
                 data-imageName="custom"
               />
 
@@ -2908,9 +3026,9 @@
                 <i class="fas fa-circle fa-stack-2x"></i>
                 <i class="fas fa-pen fa-stack-1x fa-inverse"></i>
               </span>
-            </div>
-          {/if}
+          </div>
 
+          </ImageBubblePicker>
           <div
             class="hover-label badge"
             style="opacity:{hoverInfo.show ? 1 : 0}"
@@ -2931,29 +3049,19 @@
           role="group"
           aria-label="Layer focus controls"
         >
-          <div class="select-wrapper layer-search-wrapper">
-            <span class="icon is-left" aria-hidden="true">
-              <i class="fas fa-search"></i>
-            </span>
-            <label class="sr-only" for="layer-search">Find a CNN layer</label>
-            <input
-              bind:value={layerSearchValue}
-              class="custom-select layer-search-input"
-              id="layer-search"
-              list="layer-search-options"
-              placeholder="Find layer"
-              autocomplete="off"
-              disabled={disableControl || isModelLoading || !cnn?.length}
-              on:keydown={handleLayerSearchKeydown}
-            />
-            <datalist id="layer-search-options">
-              {#each cnn || [] as layer, layerIndex}
-                <option value={getLayerSearchLabel(layerIndex)}>
-                  {layer[0]?.layerName}
-                </option>
-              {/each}
-            </datalist>
-          </div>
+          <WonderingSelect
+            bind:value={layerSearchValue}
+            className="layer-search-dropdown"
+            id="layer-search"
+            ariaLabel="Find a CNN layer"
+            placeholder="Find layer"
+            iconClass="fas fa-search"
+            options={(cnn || []).map((layer, layerIndex) => ({
+              value: getLayerSearchLabel(layerIndex),
+              label: getLayerSearchLabel(layerIndex),
+            }))}
+            disabled={disableControl || isModelLoading || !cnn?.length}
+          />
 
           <button
             class="custom-btn layer-focus-submit-btn"
@@ -3013,6 +3121,7 @@
         </div>
 
         {#if !isLayerFocusActive}
+          <RevealMenu disabled={disableControl || isModelLoading} on:restart={() => { clearAutoRevealTimer(); showWelcome = false; tourActive = false; resetOverviewLayerReveal(); resetGraphZoom(); }}>
           <button
             class="reveal-layer-btn"
             disabled={disableControl || isModelLoading}
@@ -3036,26 +3145,22 @@
             </span>
             <span class="reveal-progress">{manualRevealInfo.progressText}</span>
           </button>
+          </RevealMenu>
         {/if}
 
         {#if !isAiTestUiMode && !isLayerFocusActive}
-          <div class="select-wrapper" title="Switch trained architecture">
-            <span class="icon is-left">
-              <i class="fas fa-project-diagram"></i>
-            </span>
-            <select
-              bind:value={selectedModelId}
-              class="custom-select"
-              disabled={disableControl ||
-                isModelLoading ||
-                !modelOptions.length}
-              on:change={modelChanged}
-            >
-              {#each modelOptions as modelOption}
-                <option value={modelOption.id}>{modelOption.label}</option>
-              {/each}
-            </select>
-          </div>
+          <WonderingSelect
+            bind:value={selectedModelId}
+            className="model-dropdown"
+            ariaLabel="Switch trained architecture"
+            iconClass="fas fa-project-diagram"
+            options={modelOptions.map((modelOption) => ({
+              value: modelOption.id,
+              label: modelOption.label,
+            }))}
+            disabled={disableControl || isModelLoading || !modelOptions.length}
+            on:change={modelChanged}
+          />
         {/if}
 
         <button
@@ -3068,36 +3173,53 @@
           <span class="icon">
             <i class="fas fa-eye"></i>
           </span>
-          <span id="hover-label-text"> Show detail </span>
+          <span class="detail-button-label">Show detail</span>
         </button>
 
-        <div class="select-wrapper" title="Change color scale range">
-          <span class="icon is-left">
-            <i class="fas fa-palette"></i>
-          </span>
-          <select
-            bind:value={selectedScaleLevel}
-            id="level-select"
-            class="custom-select"
-            disabled={disableControl || isModelLoading}
-          >
-            <option value="local">Unit</option>
-            <option value="module">Module</option>
-            <option value="global">Global</option>
-          </select>
-        </div>
+        <WonderingSelect
+          bind:value={selectedScaleLevel}
+          className="scale-dropdown"
+          id="level-select"
+          ariaLabel="Change color scale range"
+          iconClass="fas fa-palette"
+          options={[
+            { value: "local", label: "Unit" },
+            { value: "module", label: "Module" },
+            { value: "global", label: "Global" },
+          ]}
+          disabled={disableControl || isModelLoading}
+        />
       </div>
     </div>
   </div>
+  </div>
 
-  <div class="cnn">
+  <div class="cnn" aria-busy={isVisualizationLoading}>
     <svg id="cnn-svg"></svg>
+    {#if !showWelcome && !isVisualizationLoading}
+      <div class="graph-zoom" role="group" aria-label="Visualization zoom">
+        <button aria-label="Zoom out" title="Zoom out" disabled={graphZoomPercent <= 100} on:click={() => zoomGraph(1 / 1.25)}><i class="fas fa-minus"></i></button>
+        <button aria-label="Reset visualization zoom" title="Fit network" on:click={resetGraphZoom}>{graphZoomPercent}%</button>
+        <button aria-label="Zoom in" title="Zoom in" disabled={graphZoomPercent >= 500} on:click={() => zoomGraph(1.25)}><i class="fas fa-plus"></i></button>
+      </div>
+    {/if}
+    {#if !isAiTestUiMode}
+      <WelcomeTour intro={showWelcome} active={tourActive} busy={tourBusy || isVisualizationLoading} title={tourTitle} description={tourError || tourDescription} progress={tourStep} total={tourTotal} finished={tourStep >= tourTotal - 1} on:start={startTour} on:skip={skipTour} on:next={advanceTour} />
+    {/if}
+    {#if isVisualizationLoading}
+      <VisualizationLoader />
+    {/if}
+    {#if isInActPoolDetailView || softmaxDetailViewInfo?.show || denseDetailViewInfo?.show}
+      <button
+        class="detail-view-backdrop"
+        class:classifier-backdrop={softmaxDetailViewInfo?.show || denseDetailViewInfo?.show}
+        type="button"
+        aria-label="Close layer detail"
+        on:click={emptySpaceClicked}
+      ></button>
+    {/if}
   </div>
 </div>
-
-{#if !isAiTestUiMode}
-  <Article />
-{/if}
 
 <div id="detailview">
   {#if selectedNode.data && selectedNode.data.type === "conv" && selectedNodeIndex != -1}
@@ -3169,12 +3291,28 @@
   .overview {
     padding: 0;
     height: 100%;
+    min-height: 0;
     width: 100%;
+    margin: 0;
     display: flex;
     position: relative;
     flex-direction: column;
     justify-content: flex-start;
     align-items: flex-start;
+    gap: 0;
+    background: var(--page-chrome);
+    box-sizing: border-box;
+    font-family: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      sans-serif;
+  }
+
+  .header-panel {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    flex: 0 0 auto;
+    background: var(--page-chrome);
+    box-sizing: border-box;
   }
 
   .control-container {
@@ -3187,12 +3325,13 @@
     gap: 12px;
     width: 100%;
     box-sizing: border-box;
-    background-color: #ffffff;
+    background-color: var(--page-chrome);
+    border-bottom: 0;
   }
 
   .control-summary {
     color: #6b7280;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     white-space: normal;
   }
@@ -3220,9 +3359,13 @@
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
-    gap: 8px;
+    gap: 6px;
     flex: 0 1 auto;
     min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .reveal-layer-btn {
@@ -3230,21 +3373,31 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
+    height: 36px;
     min-width: 210px;
     padding: 8px 14px;
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    color: #4b5563;
-    font-size: 13px;
+    box-sizing: border-box;
+    background-color: var(--primary-surface);
+    border: 1px solid var(--primary-border);
+    border-radius: 8px;
+    color: var(--primary-text);
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    box-shadow: 0 3px 0 var(--primary-shadow);
+    transition: background-color 140ms ease, box-shadow 140ms ease,
+      transform 140ms ease;
   }
 
   .reveal-layer-btn:hover:not(:disabled) {
-    background-color: #f9fafb;
-    border-color: #d1d5db;
+    background-color: var(--primary-surface-hover);
+    transform: translateY(1px);
+    box-shadow: 0 2px 0 var(--primary-shadow);
+  }
+
+  .reveal-layer-btn:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--primary-shadow);
   }
 
   .reveal-layer-btn:disabled {
@@ -3253,7 +3406,7 @@
   }
 
   .reveal-icon {
-    color: #6b7280;
+    color: var(--primary-text);
     font-size: 14px;
     font-weight: 700;
     line-height: 1;
@@ -3267,31 +3420,81 @@
   }
 
   .reveal-progress {
-    color: #9ca3af;
+    color: #32576a;
     font-size: 12px;
     font-weight: 500;
   }
 
   .cnn {
-    width: 100%;
+    position: relative;
+    isolation: isolate;
+    width: calc(100% - 16px);
     flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 8px 8px;
     padding: 0;
-    background: var(--light-gray);
+    background: #fffcf0;
+    border: 1px solid #d4cdc4;
+    border-radius: 20px;
+    box-sizing: border-box;
     display: flex;
     align-items: flex-start;
     justify-content: center;
     overflow: hidden;
   }
 
+  .detail-view-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.88);
+    cursor: default;
+  }
+  .detail-view-backdrop.classifier-backdrop {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
   #cnn-svg {
     margin: 0 auto;
     display: block;
     width: 100%;
-    max-width: 1680px;
-    height: auto;
-    max-height: calc(100vh - 180px);
-    min-height: 420px;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
     aspect-ratio: 1680 / 760;
+    touch-action: none;
+  }
+
+  .graph-zoom { position: absolute; top: 10px; right: 10px; z-index: 21; display: flex; gap: 2px; padding: 3px; background: #fffaf0; border: 1px solid #d3ccc1; border-radius: 8px; }
+  .graph-zoom button { min-width: 36px; min-height: 36px; border: 0; border-radius: 5px; background: transparent; color: #514c47; font: inherit; font-size: 12px; cursor: pointer; }
+  .graph-zoom button:hover { background: #e5e1da; }
+  .graph-zoom button:disabled { opacity: .4; cursor: default; }
+  .graph-zoom button:focus-visible { outline: 2px solid #528ca7; }
+
+  #detailview { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto; }
+
+  @media (max-width: 1100px), (max-height: 600px) {
+    .overview { height: auto; min-height: 100%; }
+    .control-container { padding: 10px 16px; gap: 8px; }
+    .control-row { flex-wrap: wrap; gap: 10px; }
+    .right-control { flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+    .cnn { flex: 1 0 auto; height: max(460px, 60dvh); min-height: 460px; }
+    #cnn-svg { height: 100%; }
+    #detailview { position: fixed !important; top: 12px !important; left: 12px !important; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto; z-index: 35 !important; }
+    #detailview :global(.box) { box-sizing: border-box; max-width: calc(100vw - 24px); overflow: auto; }
+  }
+
+  @media (max-width: 600px) {
+    .control-summary { font-size: 11px; overflow-wrap: anywhere; }
+    .right-control { flex: 1 1 100%; }
+    .reveal-layer-btn { min-width: 180px; }
+    .cnn { border-radius: 12px; }
   }
 
   .overview.ai-test-visualization-mode {
@@ -3749,13 +3952,21 @@
 
   #detailed-button {
     margin-right: 0;
+    min-width: 140px;
+    flex-shrink: 0;
+    justify-content: center;
+  }
+
+  .detail-button-label {
+    white-space: nowrap;
   }
 
   #detailed-button.is-activated,
   #detailed-button.is-activated:hover {
-    color: #1d4ed8;
-    border-color: #93c5fd;
-    background-color: #eff6ff;
+    color: var(--primary-text);
+    border-color: var(--primary-border);
+    background-color: var(--primary-surface);
+    box-shadow: 0 3px 0 var(--primary-shadow);
   }
 
   .hover-label.badge {
@@ -3783,58 +3994,92 @@
       justify-content: flex-start;
     }
 
-    .left-control,
+    .left-control {
+      flex: 0 0 auto;
+    }
+
     .right-control {
       flex-wrap: wrap;
       justify-content: flex-start;
-      flex: 1 1 100%;
+      flex: 1 1 650px;
+      gap: 8px;
     }
   }
 
   .image-container {
-    width: 48px;
-    height: 48px;
-    border-radius: 6px;
+    width: 58px;
+    height: 58px;
+    flex: 0 0 58px;
+    border-radius: 50%;
     display: flex;
     position: relative;
-    border: 2px solid #1f2937;
+    border: 0;
     cursor: pointer;
-    overflow: hidden;
     align-items: center;
     justify-content: center;
-    background-color: #ffffff;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: transparent;
+    box-shadow: none;
+    transition-property: transform, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .image-container::after {
+    content: "";
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--page-canvas);
+    border-radius: 50%;
+    background: var(--primary-surface);
   }
 
   .image-container img {
-    width: 100%;
-    height: 100%;
+    width: 54px;
+    height: 54px;
     object-fit: cover;
+    border-radius: 50%;
+    outline: 1px solid oklch(0 0 0 / 0.1);
+    box-shadow:
+      0 0 0 3px var(--page-canvas),
+      0 0 0 5px var(--primary-border),
+      0 5px 12px rgba(48, 41, 37, 0.18);
     display: block;
-    transition: opacity 0.2s ease;
+    transition-property: width, height, opacity, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
   }
 
   .image-container.inactive {
-    border: 2px solid #e5e7eb;
     box-shadow: none;
   }
 
+  .image-container.inactive::after {
+    opacity: 0;
+  }
+
   .image-container.inactive > img {
-    opacity: 0.45;
+    width: 40px;
+    height: 40px;
+    opacity: 0.78;
+    box-shadow: 0 2px 5px rgba(48, 41, 37, 0.12);
   }
 
   .image-container.inactive:hover > img {
-    opacity: 0.7;
+    width: 46px;
+    height: 46px;
+    opacity: 1;
   }
 
   .image-container.inactive.disabled {
-    border: 2px solid #e5e7eb;
+    border-color: transparent;
     cursor: not-allowed;
   }
 
   .image-container.inactive.disabled:hover {
-    border: 2.5px solid rgb(220, 220, 220);
+    border-color: transparent;
     cursor: not-allowed;
   }
 
@@ -3857,12 +4102,20 @@
   }
 
   .image-container.inactive:hover {
-    border-color: #d1d5db;
+    border-color: transparent;
   }
 
   .image-container:hover:not(.disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .image-container:active:not(.disabled) {
+    transform: scale(0.96);
+  }
+
+  .image-container:focus-visible {
+    outline: 2px solid var(--primary-border);
+    outline-offset: 3px;
   }
 
   .edit-icon {
@@ -3888,20 +4141,30 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    height: 36px;
     padding: 8px 14px;
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    color: #4b5563;
-    font-size: 13px;
+    box-sizing: border-box;
+    background-color: var(--control-surface);
+    border: 1px solid var(--control-border);
+    border-radius: 8px;
+    color: var(--control-text);
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    box-shadow: 0 3px 0 var(--control-shadow);
+    transition: background-color 140ms ease, box-shadow 140ms ease,
+      transform 140ms ease;
   }
 
   .custom-btn:hover:not(:disabled) {
-    background-color: #f9fafb;
-    border-color: #d1d5db;
+    background-color: var(--control-surface-hover);
+    transform: translateY(1px);
+    box-shadow: 0 2px 0 var(--control-shadow);
+  }
+
+  .custom-btn:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--control-shadow);
   }
 
   .custom-btn:disabled {
@@ -3916,6 +4179,18 @@
     min-width: 0;
   }
 
+  :global(.layer-search-dropdown) {
+    width: 180px;
+  }
+
+  :global(.model-dropdown) {
+    width: 180px;
+  }
+
+  :global(.scale-dropdown) {
+    width: 110px;
+  }
+
   .layer-search-wrapper {
     flex: 0 1 180px;
     min-width: 140px;
@@ -3925,7 +4200,6 @@
     width: 100%;
     min-width: 0;
     padding-right: 10px;
-    cursor: text;
   }
 
   .layer-focus-icon-btn {
@@ -3937,7 +4211,6 @@
   }
 
   .layer-focus-submit-btn {
-    height: 35px;
     padding: 4px 14px;
   }
 
@@ -3956,27 +4229,31 @@
 
   .custom-select {
     appearance: none;
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    color: #4b5563;
-    font-size: 13px;
+    height: 36px;
+    box-sizing: border-box;
+    background-color: var(--control-surface);
+    border: 1px solid var(--control-border);
+    border-radius: 8px;
+    color: var(--control-text);
+    font-size: 14px;
     font-weight: 500;
     padding: 8px 14px 8px 32px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    box-shadow: 0 3px 0 var(--control-shadow);
+    transition: background-color 140ms ease, box-shadow 140ms ease,
+      transform 140ms ease;
   }
 
   .custom-select:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    border-color: var(--primary-border);
+    box-shadow: 0 3px 0 var(--control-shadow), 0 0 0 3px rgba(62, 126, 159, 0.2);
   }
 
   .select-wrapper .icon.is-left {
     position: absolute;
     left: 12px;
-    color: #9ca3af;
+    color: #69615b;
     font-size: 12px;
     pointer-events: none;
   }
@@ -4002,19 +4279,20 @@
   }
 
   :global(.layer-focus-range-indicator rect) {
-    fill: #ffffff;
-    stroke: #d1d5db;
+    fill: var(--control-surface);
+    stroke: var(--control-border);
     stroke-width: 1;
+    filter: drop-shadow(0 3px 0 var(--control-shadow));
   }
 
   :global(.layer-focus-range-indicator text) {
-    fill: #6b7280;
+    fill: var(--control-text);
     font-family:
-      "Inter",
+      "Public Sans",
       -apple-system,
       sans-serif;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 500;
     letter-spacing: 0;
   }
 
@@ -4022,7 +4300,7 @@
   :global(.layer-detailed-label),
   :global(.layer-intermediate-label) {
     font-family:
-      "Inter",
+      "Public Sans",
       -apple-system,
       sans-serif;
     font-size: 11px;

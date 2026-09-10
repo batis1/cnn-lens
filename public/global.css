@@ -1,4 +1,16 @@
 :root {
+	--page-chrome: #f7f4ed;
+	--page-canvas: #fffdf3;
+	--control-surface: #e5e1da;
+	--control-surface-hover: #eeeae3;
+	--control-border: #8f877e;
+	--control-shadow: #aaa39b;
+	--control-text: #302925;
+	--primary-surface: #78c5ee;
+	--primary-surface-hover: #8bd0f3;
+	--primary-border: #3e7e9f;
+	--primary-shadow: #4d91b2;
+	--primary-text: #172a34;
 	--outer-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
 	--outer-shadow-sm: 0 .125rem .25rem rgba(0,0,0,.075);
 	--outer-shadow-lg: 0 1rem 3rem rgba(0,0,0,.175);
@@ -21,9 +33,14 @@ html, body {
 
 body {
 	color: #333;
+	background: var(--page-chrome);
 	margin: 0;
 	padding: 0;
 	box-sizing: border-box;
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+	font-family: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-size: 16px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 

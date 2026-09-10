@@ -1037,7 +1037,8 @@ const animateWinningOutputLabel = (baseDelay = 0) => {
     .duration(250)
     .style('fill', styleTestMode ? '#d8eef8' : 'black')
     .style('opacity', styleTestMode ? 0.72 : 0.58)
-    .style('font-size', '11px')
+    .style('font-family', '"Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
+    .style('font-size', '16px')
     .style('font-weight', '400')
     .style('text-decoration', 'none');
 
@@ -1089,8 +1090,9 @@ const animateWinningOutputLabel = (baseDelay = 0) => {
     .attr('x', winnerCoords.x + (styleTestMode ? 8 : 0))
     .attr('y', winnerCoords.y + nodeLength / 2)
     .style('dominant-baseline', 'middle')
-    .style('font-size', styleTestMode ? '13px' : '18px')
-    .style('font-weight', styleTestMode ? '700' : '900')
+    .style('font-family', '"Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
+    .style('font-size', '16px')
+    .style('font-weight', '600')
     .style('fill', styleTestMode ? '#f8fdff' : packetColors.purple)
     .text(winnerText);
 
@@ -1099,15 +1101,7 @@ const animateWinningOutputLabel = (baseDelay = 0) => {
     .delay(winnerDelay)
     .duration(220)
     .ease(d3.easeCubicOut)
-    .style('fill', styleTestMode ? '#f8fdff' : packetColors.purple)
-    .style('opacity', 1)
-    .style('font-size', styleTestMode ? '12px' : '16px')
-    .style('font-weight', styleTestMode ? '600' : '800')
-    .style('text-decoration', styleTestMode ? 'none' : 'underline')
-    .transition('winner-settle')
-    .duration(180)
-    .ease(d3.easeCubicOut)
-    .style('font-size', styleTestMode ? '12px' : '15px');
+    .style('opacity', 0);
 
   winnerBar
     .transition('winner-bar')
@@ -1150,7 +1144,7 @@ const animateWinningOutputLabel = (baseDelay = 0) => {
     .style('opacity', 0.96)
     .transition('winner-overlay-settle')
     .duration(260)
-    .style('opacity', 0.82);
+    .style('opacity', 1);
 
 }
 
@@ -1247,10 +1241,12 @@ const setLayerRevealVisibility = (cnnGroup, layerIndex, visible, duration = 0) =
   let detailedTargetOpacity = detailedMode ? 0.7 : 0;
 
   let layerGroup = cnnGroup.select(`#cnn-layer-group-${layerIndex}`);
+  let nodeGroups = layerGroup.selectAll('g.node-group');
   let compactLabel = svg.select(`#layer-label-${layerIndex}`);
   let detailedLabel = svg.select(`#layer-detailed-label-${layerIndex}`);
 
   layerGroup.interrupt('manual-layer-reveal');
+  nodeGroups.style('pointer-events', visible ? 'all' : 'none');
   compactLabel.interrupt('manual-label-reveal');
   detailedLabel.interrupt('manual-detail-label-reveal');
 
@@ -1703,7 +1699,8 @@ export const drawCNN = (width, height, cnnGroup, nodeMouseOverHandler,
         .attr('x', left)
         .attr('y', (d, i) => nodeCoordinate[l][i].y + nodeLength / 2)
         .style('dominant-baseline', 'middle')
-        .style('font-size', '11px')
+        .style('font-family', '"Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif')
+        .style('font-size', '16px')
         .style('fill', 'black')
         .style('opacity', 0.5)
         .text((d, i) => classLists[i]);

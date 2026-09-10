@@ -82,6 +82,28 @@ export const explainWithBackend = async (
   return response.json();
 };
 
+export const prepareCustomImageWithBackend = async (
+  source,
+  apiBase = defaultBackendApiBase,
+) => {
+  let response = await fetch(`${apiBase}/custom-image`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ source }),
+  });
+
+  if (!response.ok) {
+    let errorPayload = await response.json().catch(() => ({}));
+    throw new Error(
+      errorPayload.error || `Custom image request failed with ${response.status}`,
+    );
+  }
+
+  return response.json();
+};
+
 // AI_TEST_UI_INTEGRATION:
 // Calls the Flask `/api/test` endpoint that ports AI_Test_UI/test.py into
 // frontend-friendly JSON. To hide the UI, switch ENABLE_AI_TEST_UI in

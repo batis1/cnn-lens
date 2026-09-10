@@ -22,9 +22,15 @@
 <style>
 #explainer {
   width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   padding: 0;
   margin: auto;
+  overflow: hidden;
   /* outline: 1px solid var(--g-dark-gray); */
+}
+@media (max-width: 1100px), (max-height: 600px) {
+  #explainer { overflow: visible; flex: 1 0 auto; margin: 0; }
 }
 </style>
 

@@ -22,3 +22,7 @@ backend/data/generated/
 _minted/
 output/
 backend/*.log
+.vercel/
+.env.local
+.env.*.local
+public/custom-inputs/
