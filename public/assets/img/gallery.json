@@ -1,102 +1,102 @@
 [
   {
-    "file": "sample_val_1239.JPEG",
-    "class": "lifeboat",
-    "source": "data/class_10_val/test_images/val_1239.JPEG"
+    "file": "sample_new_goldfish_1.JPEG",
+    "class": "goldfish",
+    "source": "data/class_10_val/val_images/val_1230.JPEG"
   },
   {
-    "file": "sample_val_1245.JPEG",
-    "class": "lifeboat",
-    "source": "data/class_10_val/test_images/val_1245.JPEG"
+    "file": "sample_new_goldfish_2.JPEG",
+    "class": "goldfish",
+    "source": "data/class_10_val/val_images/val_1267.JPEG"
   },
   {
-    "file": "sample_val_1349.JPEG",
-    "class": "ladybug",
-    "source": "data/class_10_val/test_images/val_1349.JPEG"
+    "file": "sample_new_tabby_cat_1.JPEG",
+    "class": "tabby cat",
+    "source": "data/class_10_val/val_images/val_1300.JPEG"
   },
   {
-    "file": "sample_val_1724.JPEG",
-    "class": "ladybug",
-    "source": "data/class_10_val/test_images/val_1724.JPEG"
+    "file": "sample_new_tabby_cat_2.JPEG",
+    "class": "tabby cat",
+    "source": "data/class_10_val/val_images/val_1356.JPEG"
   },
   {
-    "file": "sample_val_1159.JPEG",
-    "class": "pizza",
-    "source": "data/class_10_val/test_images/val_1159.JPEG"
+    "file": "sample_new_german_shepherd_1.JPEG",
+    "class": "German shepherd",
+    "source": "data/class_10_val/val_images/val_1180.JPEG"
   },
   {
-    "file": "sample_val_1488.JPEG",
-    "class": "pizza",
-    "source": "data/class_10_val/test_images/val_1488.JPEG"
+    "file": "sample_new_german_shepherd_2.JPEG",
+    "class": "German shepherd",
+    "source": "data/class_10_val/val_images/val_1196.JPEG"
   },
   {
-    "file": "sample_val_1395.JPEG",
-    "class": "bell pepper",
-    "source": "data/class_10_val/test_images/val_1395.JPEG"
+    "file": "sample_new_monarch_butterfly_1.JPEG",
+    "class": "monarch butterfly",
+    "source": "data/class_10_val/val_images/val_1084.JPEG"
   },
   {
-    "file": "sample_val_1581.JPEG",
-    "class": "bell pepper",
-    "source": "data/class_10_val/test_images/val_1581.JPEG"
+    "file": "sample_new_monarch_butterfly_2.JPEG",
+    "class": "monarch butterfly",
+    "source": "data/class_10_val/val_images/val_1156.JPEG"
   },
   {
-    "file": "sample_val_1182.JPEG",
-    "class": "school bus",
-    "source": "data/class_10_val/test_images/val_1182.JPEG"
+    "file": "sample_new_banana_1.JPEG",
+    "class": "banana",
+    "source": "data/class_10_val/val_images/val_11.JPEG"
   },
   {
-    "file": "sample_val_1815.JPEG",
-    "class": "school bus",
-    "source": "data/class_10_val/test_images/val_1815.JPEG"
+    "file": "sample_new_banana_2.JPEG",
+    "class": "banana",
+    "source": "data/class_10_val/val_images/val_1110.JPEG"
   },
   {
-    "file": "sample_val_1083.JPEG",
-    "class": "koala",
-    "source": "data/class_10_val/test_images/val_1083.JPEG"
+    "file": "sample_new_pomegranate_1.JPEG",
+    "class": "pomegranate",
+    "source": "data/class_10_val/val_images/val_1089.JPEG"
   },
   {
-    "file": "sample_val_1240.JPEG",
-    "class": "koala",
-    "source": "data/class_10_val/test_images/val_1240.JPEG"
+    "file": "sample_new_pomegranate_2.JPEG",
+    "class": "pomegranate",
+    "source": "data/class_10_val/val_images/val_1177.JPEG"
   },
   {
-    "file": "sample_val_1471.JPEG",
-    "class": "espresso",
-    "source": "data/class_10_val/test_images/val_1471.JPEG"
+    "file": "sample_new_bullet_train_1.JPEG",
+    "class": "bullet train",
+    "source": "data/class_10_val/val_images/val_1442.JPEG"
   },
   {
-    "file": "sample_val_2195.JPEG",
-    "class": "espresso",
-    "source": "data/class_10_val/test_images/val_2195.JPEG"
+    "file": "sample_new_bullet_train_2.JPEG",
+    "class": "bullet train",
+    "source": "data/class_10_val/val_images/val_1596.JPEG"
   },
   {
-    "file": "sample_val_1313.JPEG",
-    "class": "red panda",
-    "source": "data/class_10_val/test_images/val_1313.JPEG"
+    "file": "sample_new_lighthouse_1.JPEG",
+    "class": "lighthouse",
+    "source": "data/class_10_val/val_images/val_1020.JPEG"
   },
   {
-    "file": "sample_val_1641.JPEG",
-    "class": "red panda",
-    "source": "data/class_10_val/test_images/val_1641.JPEG"
+    "file": "sample_new_lighthouse_2.JPEG",
+    "class": "lighthouse",
+    "source": "data/class_10_val/val_images/val_1276.JPEG"
   },
   {
-    "file": "sample_val_1191.JPEG",
-    "class": "orange",
-    "source": "data/class_10_val/test_images/val_1191.JPEG"
+    "file": "sample_new_sunglasses_1.JPEG",
+    "class": "sunglasses",
+    "source": "data/class_10_val/val_images/val_1169.JPEG"
   },
   {
-    "file": "sample_val_1250.JPEG",
-    "class": "orange",
-    "source": "data/class_10_val/test_images/val_1250.JPEG"
+    "file": "sample_new_sunglasses_2.JPEG",
+    "class": "sunglasses",
+    "source": "data/class_10_val/val_images/val_1440.JPEG"
   },
   {
-    "file": "sample_val_1071.JPEG",
-    "class": "sport car",
-    "source": "data/class_10_val/test_images/val_1071.JPEG"
+    "file": "sample_new_refrigerator_1.JPEG",
+    "class": "refrigerator",
+    "source": "data/class_10_val/val_images/val_1202.JPEG"
   },
   {
-    "file": "sample_val_1507.JPEG",
-    "class": "sport car",
-    "source": "data/class_10_val/test_images/val_1507.JPEG"
+    "file": "sample_new_refrigerator_2.JPEG",
+    "class": "refrigerator",
+    "source": "data/class_10_val/val_images/val_1282.JPEG"
   }
 ]

@@ -31,6 +31,7 @@ export const overviewConfig = {
   overlayRectOffset: 12,
   // Task 3 at lines 33-34: shared class labels reused by all 7-layer, 12-layer,
   // and 17-layer demo models when rendering the output layer.
-  classLists: ['lifeboat', 'ladybug', 'pizza', 'bell pepper', 'school bus',
-    'koala', 'espresso', 'red panda', 'orange', 'sport car']
+  classLists: ['goldfish', 'tabby cat', 'German shepherd', 'monarch butterfly',
+    'banana', 'pomegranate', 'bullet train', 'lighthouse', 'sunglasses',
+    'refrigerator']
 };

@@ -7,16 +7,16 @@ from torch import nn
 
 
 TINY_VGG_CLASS_LABELS = [
-    "lifeboat",
-    "ladybug",
-    "pizza",
-    "bell pepper",
-    "school bus",
-    "koala",
-    "espresso",
-    "red panda",
-    "orange",
-    "sport car",
+    "goldfish",
+    "tabby cat",
+    "German shepherd",
+    "monarch butterfly",
+    "banana",
+    "pomegranate",
+    "bullet train",
+    "lighthouse",
+    "sunglasses",
+    "refrigerator",
 ]
 
 

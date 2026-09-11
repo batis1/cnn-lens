@@ -4,7 +4,7 @@
   export let active = false;
   export let busy = false;
   export let title = "Choose an image";
-  export let description = "Start with a sample image. Next selects the school bus and reveals its red, green, and blue channels.";
+  export let description = "Start with a sample image. Next selects the goldfish and reveals its red, green, and blue channels.";
   export let progress = 0;
   export let total = 1;
   export let finished = false;
@@ -15,11 +15,11 @@
   <section class="welcome" aria-label="Welcome to CNN Lens">
     <div class="introduction">
       <div class="journey" aria-hidden="true">
-        <img src={`${import.meta.env.BASE_URL}assets/img/sample_val_1182.JPEG`} alt="" />
+        <img src={`${import.meta.env.BASE_URL}assets/img/sample_new_goldfish_1.JPEG`} alt="" />
         <span class="flow"><i class="fas fa-arrow-right"></i></span>
         <span class="network"><i class="fas fa-microchip"></i></span>
         <span class="flow"><i class="fas fa-arrow-right"></i></span>
-        <span class="prediction">School bus<span class="prediction-bar"></span></span>
+        <span class="prediction">Goldfish<span class="prediction-bar"></span></span>
       </div>
       <h1>See how a neural network sees.</h1>
       <div class="actions"><button class="primary" disabled={busy} on:click={() => dispatch("start")}>Take a guided tour <i class="fas fa-arrow-right"></i></button><button disabled={busy} on:click={() => dispatch("skip")}>Explore on my own</button></div>
