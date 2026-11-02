@@ -3971,7 +3971,7 @@
     .right-control {
       flex-wrap: wrap;
       justify-content: flex-start;
-      flex: 1 1 650px;
+      flex: 1 1 100%;
       gap: 8px;
     }
   }
