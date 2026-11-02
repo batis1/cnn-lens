@@ -36,7 +36,6 @@
   import extraGalleryImages from "../../public/assets/img/gallery.json";
   import VisualizationLoader from "./VisualizationLoader.svelte";
   import WelcomeTour from "./WelcomeTour.svelte";
-  import ArchitectureSummary from "./ArchitectureSummary.svelte";
   import RevealMenu from "./RevealMenu.svelte";
   import AiTestPanel from "../ai-test-ui/AiTestPanel.svelte";
   import Header from "../Header.svelte";
@@ -2950,14 +2949,6 @@
       document.getElementById("app-page")?.scrollTo({ top: 0 });
     }} />
   <div class="control-container">
-    <div class="control-summary">
-      {#if selectedModelSpec}
-        <ArchitectureSummary count={selectedModelSpec.totalLayers || cnn?.length} summary={selectedModelSpec.summary} kernels={selectedModelSpec.convKernelSummary} />
-      {:else if isModelLoading}
-        Loading model...
-      {/if}
-    </div>
-
     <div class="control-row">
       {#if !isAiTestUiMode}
         <div class="left-control">
@@ -3330,13 +3321,6 @@
     border-bottom: 0;
   }
 
-  .control-summary {
-    color: #6b7280;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: normal;
-  }
-
   .control-row {
     display: flex;
     align-items: center;
@@ -3492,7 +3476,6 @@
   }
 
   @media (max-width: 600px) {
-    .control-summary { font-size: 11px; overflow-wrap: anywhere; }
     .right-control { flex: 1 1 100%; }
     .reveal-layer-btn { min-width: 180px; }
     .cnn { border-radius: 12px; }
@@ -3534,20 +3517,6 @@
     border-top: 0;
     border-bottom: 1px solid rgba(14, 252, 255, 0.42);
     box-shadow: none;
-  }
-
-  .ai-test-visualization-mode .control-summary {
-    color: var(--ai-vis-text);
-    text-shadow: 0 0 8px rgba(14, 252, 255, 0.4);
-  }
-
-  .ai-test-visualization-mode.style-test-mode .control-summary {
-    color: rgba(232, 253, 255, 0.78);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0;
-    line-height: 1.35;
-    text-shadow: none;
   }
 
   .ai-test-visualization-mode.style-test-mode .control-row {
