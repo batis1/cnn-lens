@@ -3958,19 +3958,8 @@
     min-width: 120px;
   }
 
-  @media (min-width: 1101px) and (max-width: 1500px) and (min-height: 601px) {
-    .right-control {
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .control-row { gap: 8px; }
-    .right-control .layer-focus-tools { gap: 6px; }
-    .right-control :global(.layer-search-dropdown) { width: 150px; }
-    .right-control :global(.model-dropdown) { width: 155px; }
-    .right-control :global(.scale-dropdown) { width: 90px; }
-    .reveal-layer-btn { min-width: 170px; padding-inline: 8px; }
-    .right-control .custom-btn { padding-inline: 9px; white-space: nowrap; }
+  @media (min-width: 1101px) and (min-height: 601px) {
+    .control-row { zoom: 0.8; }
   }
 
   .image-container {
